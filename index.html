@@ -42,9 +42,9 @@
   </table>
 </section>
 
-<!-- ライブラリ -->
+<!-- ライブラリ：OpenCV + Tesseract v2（モバイル安定版） -->
 <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-<script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+<script src="https://unpkg.com/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
 
 <script>
 (() => {
@@ -64,19 +64,6 @@
   let acc = 0, frames = 0;
 
   const tiles = new Map(); // id -> {bbox, letter, number, confL, confN, last}
-  // 明示パス＆進捗をステータスに表示
-// Blobワーカー + 同一オリジンの学習データを使用
-const tesseract = Tesseract.createWorker({
-  workerBlobURL: true,            // Safari安定化
-  langPath: './tessdata',         // ← ここがポイント（自分のリポ内を参照）
-  logger: m => {
-    if (m && m.status) {
-      const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
-      statusSpan.textContent = `${m.status}${pct}`;
-    }
-  }
-});
-
   const dist = (a,b) => Math.hypot(a.x - b.x, a.y - b.y);
 
   function exportCSV() {
@@ -136,16 +123,31 @@ const tesseract = Tesseract.createWorker({
     return rects;
   }
 
+  // ======= v2 方式：毎回 recognize 呼び出し =======
   async function ocrFullFrame(canvas) {
-    const { data: { words } } = await Tesseract.recognize(canvas, 'eng', {
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    });
+    const { data: { words } } = await Tesseract.recognize(
+      canvas,
+      'eng',
+      {
+        // フォルダに tessdata/eng.traineddata(.gz) を置いた場合は同一オリジンから読む
+        langPath: './tessdata',
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        logger: m => {
+          if (m && m.status) {
+            const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
+            statusSpan.textContent = `${m.status}${pct}`;
+          }
+        }
+      }
+    );
     return words.map(w => ({
       text: (w.text||"").trim(),
-      box: {x:w.bbox.x0, y:w.bbox.y0, w:w.bbox.x1-w.bbox.x0, h:w.bbox.y1-w.bbox.y0, cx:(w.bbox.x0+w.bbox.x1)/2, cy:(w.bbox.y0+w.bbox.y1)/2},
+      box: {x:w.bbox.x0, y:w.bbox.y0, w:w.bbox.x1-w.bbox.x0, h:w.bbox.y1-w.bbox.y0,
+            cx:(w.bbox.x0+w.bbox.x1)/2, cy:(w.bbox.y0+w.bbox.y1)/2},
       conf: w.confidence ?? 0
     }));
   }
+  // ===============================================
 
   function associate(rects, texts) {
     const letters = texts.filter(t => /^[A-Z]$/.test(t.text));
@@ -232,10 +234,10 @@ const tesseract = Tesseract.createWorker({
     if (acc > 1000) { fpsSpan.textContent = `${frames} fps`; frames = 0; acc = 0; }
 
     statusSpan.textContent = `rects:${rects.length}  words:${texts.length}`;
-    setTimeout(()=> requestAnimationFrame(loop), 600);
+    setTimeout(()=> requestAnimationFrame(loop), 800); // 負荷を少し下げる
   }
 
-  // ====== ★ 修正版：カメラを先に確保し段階的にリトライ ======
+  // ==== カメラを先に確保（段階的にリトライ） ====
   async function start() {
     if (running) return;
     startBtn.disabled = true;
@@ -243,16 +245,12 @@ const tesseract = Tesseract.createWorker({
 
     async function openStream() {
       try {
-        return await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }, audio: false
-        });
-      } catch (e1) {
+        return await navigator.mediaDevices.getUserMedia({ video: { exact: { facingMode: "environment" }}, audio:false });
+      } catch (_){
         try {
-          return await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "environment" }, audio: false
-          });
-        } catch (e2) {
-          return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          return await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio:false });
+        } catch (_){
+          return await navigator.mediaDevices.getUserMedia({ video: true, audio:false });
         }
       }
     }
@@ -269,35 +267,12 @@ const tesseract = Tesseract.createWorker({
       return;
     }
 
-    if (!tesseract.__loaded) {
-  async function initOCR() {
-    await tesseract.load();
-    await tesseract.loadLanguage('eng');
-    await tesseract.initialize('eng');
-  }
-  // 20秒で一度リトライ（Safari対策）
-  const timeout = ms => new Promise((_,rej)=>setTimeout(()=>rej(new Error('ocr-timeout')), ms));
-  try {
-    statusSpan.textContent = "initializing OCR…";
-    await Promise.race([initOCR(), timeout(20000)]);
-  } catch (e) {
-    // コアの代替CDNで再試行
-    statusSpan.textContent = "retrying OCR…";
-    // 代替コアを指す（まれにCDN相性で止まるため）
-    tesseract.params = tesseract.params || {};
-    tesseract.params.corePath = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.0.0/tesseract-core.wasm.js';
-    await initOCR();
-  }
-  tesseract.__loaded = true;
-  statusSpan.textContent = "running";
-}
-
-    running = true;
+    running = true; // v2はここでrunningにする
     stopBtn.disabled = false; exportBtn.disabled = false;
     statusSpan.textContent = "running";
     loop();
   }
-  // ============================================================
+  // ================================================
 
   function stop() {
     running = false;
