@@ -64,7 +64,19 @@
   let acc = 0, frames = 0;
 
   const tiles = new Map(); // id -> {bbox, letter, number, confL, confN, last}
-  const tesseract = Tesseract.createWorker({ logger: _ => {} });
+  // 明示パス＆進捗をステータスに表示
+const tesseract = Tesseract.createWorker({
+  workerPath: 'https://unpkg.com/tesseract.js@4.1.1/dist/worker.min.js',
+  corePath:   'https://unpkg.com/tesseract.js-core@5.0.0/tesseract-core.wasm.js',
+  langPath:   'https://tessdata.projectnaptha.com/4.0.0',
+  logger: m => {
+    if (m && m.status) {
+      // 例: "loading tesseract core 73%"
+      const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
+      statusSpan.textContent = `${m.status}${pct}`;
+    }
+  }
+});
 
   const dist = (a,b) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -259,10 +271,27 @@
     }
 
     if (!tesseract.__loaded) {
-      statusSpan.textContent = "initializing OCR…";
-      await tesseract.load(); await tesseract.loadLanguage('eng'); await tesseract.initialize('eng');
-      tesseract.__loaded = true;
-    }
+  async function initOCR() {
+    await tesseract.load();
+    await tesseract.loadLanguage('eng');
+    await tesseract.initialize('eng');
+  }
+  // 20秒で一度リトライ（Safari対策）
+  const timeout = ms => new Promise((_,rej)=>setTimeout(()=>rej(new Error('ocr-timeout')), ms));
+  try {
+    statusSpan.textContent = "initializing OCR…";
+    await Promise.race([initOCR(), timeout(20000)]);
+  } catch (e) {
+    // コアの代替CDNで再試行
+    statusSpan.textContent = "retrying OCR…";
+    // 代替コアを指す（まれにCDN相性で止まるため）
+    tesseract.params = tesseract.params || {};
+    tesseract.params.corePath = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.0.0/tesseract-core.wasm.js';
+    await initOCR();
+  }
+  tesseract.__loaded = true;
+  statusSpan.textContent = "running";
+}
 
     running = true;
     stopBtn.disabled = false; exportBtn.disabled = false;
