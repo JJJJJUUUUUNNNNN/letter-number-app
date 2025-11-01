@@ -31,7 +31,6 @@
 <div class="wrap">
   <video id="video" playsinline muted></video>
   <canvas id="overlay"></canvas>
-  <!-- 非表示のフレーム取得用 -->
   <canvas id="off" style="display:none;"></canvas>
 </div>
 
@@ -43,8 +42,8 @@
   </table>
 </section>
 
-<!-- OpenCV.js & Tesseract.js（CDN） -->
-<script async src="https://docs.opencv.org/4.x/opencv.js" ></script>
+<!-- ライブラリ -->
+<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 
 <script>
@@ -64,17 +63,11 @@
   let lastTime = performance.now();
   let acc = 0, frames = 0;
 
-  // タイル管理（矩形の中心近傍でID同定）
   const tiles = new Map(); // id -> {bbox, letter, number, confL, confN, last}
+  const tesseract = Tesseract.createWorker({ logger: _ => {} });
 
-  const tesseract = Tesseract.createWorker({
-    logger: m => {} // 進捗は表示しない
-  });
-
-  // 近傍距離
   const dist = (a,b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-  // CSV書き出し
   function exportCSV() {
     const lines = [["id","letter","number","confLetter","confNumber","updatedAt"]];
     for (const [id, t] of tiles.entries()) {
@@ -87,7 +80,6 @@
     a.click(); URL.revokeObjectURL(url);
   }
 
-  // テーブル更新
   function renderList() {
     const arr = [...tiles.entries()].sort((a,b)=> (a[1].letter||"") .localeCompare(b[1].letter||""));
     rows.innerHTML = arr.map(([id,t],i)=>`
@@ -102,7 +94,6 @@
     exportBtn.disabled = tiles.size===0;
   }
 
-  // OpenCVで四角候補（牌）を検出
   function detectRectangles(mat) {
     const gray = new cv.Mat();
     const blur = new cv.Mat();
@@ -123,7 +114,6 @@
       cv.approxPolyDP(cnt, approx, 0.03 * peri, true);
       if (approx.rows === 4 && cv.contourArea(approx) > 500) {
         const r = cv.boundingRect(approx);
-        // ほぼ正方形だけ採用（比 0.6〜1.4）
         const ar = r.width / r.height;
         if (ar>0.6 && ar<1.4) {
           rects.push({x:r.x, y:r.y, w:r.width, h:r.height, cx:r.x + r.width/2, cy:r.y + r.height/2});
@@ -135,12 +125,10 @@
     return rects;
   }
 
-  // OCR（フレーム全体を一度だけ）
   async function ocrFullFrame(canvas) {
     const { data: { words } } = await Tesseract.recognize(canvas, 'eng', {
       tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     });
-    // words: [{text, bbox:{x0,y0,x1,y1}, confidence}]
     return words.map(w => ({
       text: (w.text||"").trim(),
       box: {x:w.bbox.x0, y:w.bbox.y0, w:w.bbox.x1-w.bbox.x0, h:w.bbox.y1-w.bbox.y0, cx:(w.bbox.x0+w.bbox.x1)/2, cy:(w.bbox.y0+w.bbox.y1)/2},
@@ -148,15 +136,11 @@
     }));
   }
 
-  // 牌とテキストを紐づけ
   function associate(rects, texts) {
-    // 英字/数字に分ける
     const letters = texts.filter(t => /^[A-Z]$/.test(t.text));
     const numbers = texts.filter(t => /^\d{2,4}$/.test(t.text));
-
     const results = [];
     for (const r of rects) {
-      // 牌“内側”の最も近い英字
       const insideLetters = letters.filter(t => (
         t.box.cx >= r.x+4 && t.box.cx <= r.x + r.w - 4 &&
         t.box.cy >= r.y+4 && t.box.cy <= r.y + r.h - 4
@@ -166,12 +150,10 @@
         insideLetters.sort((a,b)=> dist({x:a.box.cx,y:a.box.cy},{x:r.cx,y:r.cy}) - dist({x:b.box.cx,y:b.box.cy},{x:r.cx,y:r.cy}));
         L = insideLetters[0];
       }
-      // 牌“周辺”の数字（中心から半径 = 長辺の1.2倍以内）
       const rad = Math.max(r.w, r.h) * 1.2;
       const nearNumbers = numbers.filter(t => dist({x:t.box.cx,y:t.box.cy},{x:r.cx,y:r.cy}) < rad);
       let N = null;
       if (nearNumbers.length) {
-        // 中心に最も近いもの
         nearNumbers.sort((a,b)=> dist({x:a.box.cx,y:a.box.cy},{x:r.cx,y:r.cy}) - dist({x:b.box.cx,y:b.box.cy},{x:r.cx,y:r.cy}));
         N = nearNumbers[0];
       }
@@ -180,26 +162,19 @@
     return results;
   }
 
-  // 可視化
   function draw(rects, pairs) {
     ctx.clearRect(0,0,overlay.width, overlay.height);
-    // 四角
     ctx.lineWidth = 2; ctx.strokeStyle = "#00ff88"; ctx.font = "14px SFMono-Regular, Menlo, monospace"; ctx.fillStyle="#00ff88";
-    rects.forEach(r => {
-      ctx.strokeRect(r.x, r.y, r.w, r.h);
-    });
-    // ラベル
+    rects.forEach(r => ctx.strokeRect(r.x, r.y, r.w, r.h));
     pairs.forEach(p => {
       const label = `[${p.L?.text ?? "?"}]=${p.N?.text ?? "???"}`;
       ctx.fillText(label, p.rect.x, p.rect.y - 4);
     });
   }
 
-  // 牌IDの更新（矩形中心の近傍でマッチ）
   function updateTiles(pairs) {
     const now = Date.now();
     for (const p of pairs) {
-      // 既存で最も近いID
       let bestId = null, bestD = 99999;
       for (const [id,t] of tiles) {
         const d = dist({x:t.bbox.cx,y:t.bbox.cy},{x:p.rect.cx,y:p.rect.cy});
@@ -217,19 +192,14 @@
         last: now
       });
     }
-    // 古いものをクリーン（10秒見えない）
     for (const [id,t] of [...tiles]) {
       if (now - t.last > 10000) tiles.delete(id);
     }
     renderList();
   }
 
-  // メインループ
   async function loop() {
     if (!running) return;
-    const t0 = performance.now();
-
-    // Canvasサイズを動画に合わせる
     const w = video.videoWidth, h = video.videoHeight;
     if (!w || !h) { requestAnimationFrame(loop); return; }
     overlay.width = off.width = w;
@@ -237,43 +207,69 @@
     const octx = off.getContext('2d');
     octx.drawImage(video, 0, 0, w, h);
 
-    // OpenCV: 画像→Mat
     const frame = cv.imread(off);
-    const rects = detectRectangles(frame); // 牌候補
+    const rects = detectRectangles(frame);
     frame.delete();
 
-    // OCR（Tesseract）
     const texts = await ocrFullFrame(off);
-
     const pairs = associate(rects, texts);
     draw(rects, pairs);
     updateTiles(pairs);
 
-    // fps
     const t1 = performance.now();
     frames++; acc += (t1 - lastTime); lastTime = t1;
     if (acc > 1000) { fpsSpan.textContent = `${frames} fps`; frames = 0; acc = 0; }
 
     statusSpan.textContent = `rects:${rects.length}  words:${texts.length}`;
-    // 負荷軽減：600ms間隔
     setTimeout(()=> requestAnimationFrame(loop), 600);
   }
 
-  // 開始/停止
+  // ====== ★ 修正版：カメラを先に確保し段階的にリトライ ======
   async function start() {
     if (running) return;
     startBtn.disabled = true;
-    statusSpan.textContent = "initializing…";
-    // Tesseract worker起動（初回のみ）
-    if (!tesseract.__loaded) { await tesseract.load(); await tesseract.loadLanguage('eng'); await tesseract.initialize('eng'); tesseract.__loaded = true; }
+    statusSpan.textContent = "requesting camera…";
 
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'environment' }, audio:false });
-    video.srcObject = stream;
-    await video.play();
+    async function openStream() {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } }, audio: false
+        });
+      } catch (e1) {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" }, audio: false
+          });
+        } catch (e2) {
+          return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+      }
+    }
+
+    try {
+      const stream = await openStream();
+      video.setAttribute('playsinline','');
+      video.setAttribute('muted','');
+      video.srcObject = stream;
+      await video.play();
+    } catch (err) {
+      alert("カメラにアクセスできませんでした。\nSafariの『このWebサイトの設定』でカメラを『許可』にしてください。");
+      startBtn.disabled = false;
+      return;
+    }
+
+    if (!tesseract.__loaded) {
+      statusSpan.textContent = "initializing OCR…";
+      await tesseract.load(); await tesseract.loadLanguage('eng'); await tesseract.initialize('eng');
+      tesseract.__loaded = true;
+    }
+
     running = true;
     stopBtn.disabled = false; exportBtn.disabled = false;
+    statusSpan.textContent = "running";
     loop();
   }
+  // ============================================================
 
   function stop() {
     running = false;
@@ -285,7 +281,6 @@
   startBtn.addEventListener('click', start);
   stopBtn.addEventListener('click', stop);
   exportBtn.addEventListener('click', exportCSV);
-
 })();
 </script>
 </body>
