@@ -1,21 +1,21 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
+<meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-<title>Letter-Number Linker (Web Prototype)</title>
+<title>Letter-Number Linker (iPhone stable)</title>
 <style>
-  body { margin:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#0a0f0a; color:#e9ffe9;}
-  header { padding:10px 14px; position:sticky; top:0; background:#0f1a0f; border-bottom:1px solid #1f3d1f; z-index:10;}
-  button { padding:10px 14px; margin-right:8px; border:0; border-radius:8px; background:#1f5d1f; color:#fff; font-weight:600;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;background:#0a0f0a;color:#e9ffe9}
+  header{padding:10px 14px;position:sticky;top:0;background:#0f1a0f;border-bottom:1px solid #1f3d1f;z-index:10}
+  button{padding:10px 14px;margin-right:8px;border:0;border-radius:8px;background:#1f5d1f;color:#fff;font-weight:600}
   button:disabled{opacity:.5}
-  .wrap { position:relative; }
-  video, canvas#overlay { width:100vw; height:56.25vw; max-height:70vh; object-fit:contain; background:#000; display:block; }
-  #list { padding:10px 14px; }
-  table { width:100%; border-collapse:collapse; }
-  th, td { text-align:left; padding:8px; border-bottom:1px solid #1f3d1f; }
-  .note { color:#a7e3a7; font-size:.9em; }
-  .chip { padding:2px 6px; border-radius:6px; background:#184418; font-size:.8em; }
+  .wrap{position:relative}
+  video,canvas#overlay{width:100vw;height:56.25vw;max-height:70vh;object-fit:contain;background:#000;display:block}
+  #list{padding:10px 14px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid #1f3d1f}
+  .chip{padding:2px 6px;border-radius:6px;background:#184418;font-size:.8em}
+  .note{color:#a7e3a7;font-size:.9em}
 </style>
 </head>
 <body>
@@ -26,7 +26,7 @@
   <button id="flipBtn" disabled>Flip</button>
   <span class="chip" id="fps">— fps</span>
   <span class="chip" id="status">idle</span>
-  <div class="note">カメラ上にある四角(牌)とテキストを検出→英字1文字と近くの数字(2–4桁)を紐づけて表示します。</div>
+  <div class="note">四角(牌)とテキストを検出→英字1字と近くの数字(2–4桁)を紐づけて表示します。</div>
 </header>
 
 <div class="wrap">
@@ -43,295 +43,210 @@
   </table>
 </section>
 
-<!-- ライブラリ：OpenCV + Tesseract v2（モバイル安定版） -->
+<!-- Libs -->
 <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 <script src="https://unpkg.com/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
 
 <script>
 (() => {
-  const video = document.getElementById('video');
-  const overlay = document.getElementById('overlay');
-  const off = document.getElementById('off');
-  const ctx = overlay.getContext('2d');
-  const rows = document.getElementById('rows');
-  const fpsSpan = document.getElementById('fps');
-  const statusSpan = document.getElementById('status');
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn  = document.getElementById('stopBtn');
-  const exportBtn= document.getElementById('exportBtn');
-  const flipBtn  = document.getElementById('flipBtn');
+  const video=document.getElementById('video');
+  const overlay=document.getElementById('overlay');
+  const off=document.getElementById('off');
+  const ctx=overlay.getContext('2d');
+  const rows=document.getElementById('rows');
+  const fpsSpan=document.getElementById('fps');
+  const statusSpan=document.getElementById('status');
+  const startBtn=document.getElementById('startBtn');
+  const stopBtn=document.getElementById('stopBtn');
+  const exportBtn=document.getElementById('exportBtn');
+  const flipBtn=document.getElementById('flipBtn');
 
-  let running = false;
-  let lastTime = performance.now();
-  let acc = 0, frames = 0;
+  let running=false,lastTime=performance.now(),acc=0,frames=0;
+  let currentStream=null;
 
-  const tiles = new Map(); // id -> {bbox, letter, number, confL, confN, last}
-  const dist = (a,b) => Math.hypot(a.x - b.x, a.y - b.y);
-
-  // ---------- CSV ----------
-  function exportCSV() {
-    const lines = [["id","letter","number","confLetter","confNumber","updatedAt"]];
-    for (const [id, t] of tiles.entries()) {
-      lines.push([id, t.letter||"", t.number||"", t.confL?.toFixed(2)||"", t.confN?.toFixed(2)||"", new Date(t.last).toLocaleString()]);
+  // ===== CSV =====
+  const tiles=new Map();
+  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  function exportCSV(){
+    const lines=[["id","letter","number","confLetter","confNumber","updatedAt"]];
+    for(const [id,t] of tiles.entries()){
+      lines.push([id,t.letter||"",t.number||"",t.confL?.toFixed(2)||"",t.confN?.toFixed(2)||"",new Date(t.last).toLocaleString()]);
     }
-    const csv = lines.map(r => r.map(v => `"${(v??"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement("a"), {href:url, download:"pairs.csv"});
-    a.click(); URL.revokeObjectURL(url);
+    const csv=lines.map(r=>r.map(v=>`"${(v??"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv"});const url=URL.createObjectURL(blob);
+    const a=Object.assign(document.createElement("a"),{href:url,download:"pairs.csv"});a.click();URL.revokeObjectURL(url);
   }
-
-  function renderList() {
-    const arr = [...tiles.entries()].sort((a,b)=> (a[1].letter||"") .localeCompare(b[1].letter||""));
-    rows.innerHTML = arr.map(([id,t],i)=>`
+  function renderList(){
+    const arr=[...tiles.entries()].sort((a,b)=>(a[1].letter||"").localeCompare(b[1].letter||""));
+    rows.innerHTML=arr.map(([id,t],i)=>`
       <tr>
-        <td>${i+1}</td>
-        <td>${t.letter ?? ""}</td>
-        <td>${t.number ?? ""}</td>
+        <td>${i+1}</td><td>${t.letter??""}</td><td>${t.number??""}</td>
         <td>${(t.confL??0).toFixed(2)} / ${(t.confN??0).toFixed(2)}</td>
         <td>${new Date(t.last).toLocaleTimeString()}</td>
-      </tr>
-    `).join("");
-    exportBtn.disabled = tiles.size===0;
+      </tr>`).join("");
+    exportBtn.disabled=tiles.size===0;
   }
 
-  // ---------- OpenCV: 四角検出 ----------
-  function detectRectangles(mat) {
-    const gray = new cv.Mat();
-    const blur = new cv.Mat();
-    const edges = new cv.Mat();
-    cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(gray, blur, new cv.Size(5,5), 0);
-    cv.Canny(blur, edges, 60, 150);
-
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-    cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-    const rects = [];
-    for (let i=0;i<contours.size();i++) {
-      const cnt = contours.get(i);
-      const peri = cv.arcLength(cnt, true);
-      const approx = new cv.Mat();
-      cv.approxPolyDP(cnt, approx, 0.03 * peri, true);
-      if (approx.rows === 4 && cv.contourArea(approx) > 500) {
-        const r = cv.boundingRect(approx);
-        const ar = r.width / r.height;
-        if (ar>0.6 && ar<1.4) {
-          rects.push({x:r.x, y:r.y, w:r.width, h:r.height, cx:r.x + r.width/2, cy:r.y + r.height/2});
-        }
+  // ===== OpenCV: rectangles =====
+  function detectRectangles(mat){
+    const gray=new cv.Mat(),blur=new cv.Mat(),edges=new cv.Mat();
+    cv.cvtColor(mat,gray,cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray,blur,new cv.Size(5,5),0);
+    cv.Canny(blur,edges,60,150);
+    const contours=new cv.MatVector(),hier=new cv.Mat();
+    cv.findContours(edges,contours,hier,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE);
+    const rects=[];
+    for(let i=0;i<contours.size();i++){
+      const cnt=contours.get(i),peri=cv.arcLength(cnt,true),approx=new cv.Mat();
+      cv.approxPolyDP(cnt,approx,0.03*peri,true);
+      if(approx.rows===4 && cv.contourArea(approx)>500){
+        const r=cv.boundingRect(approx),ar=r.width/r.height;
+        if(ar>0.6 && ar<1.4) rects.push({x:r.x,y:r.y,w:r.width,h:r.height,cx:r.x+r.width/2,cy:r.y+r.height/2});
       }
-      cnt.delete(); approx.delete();
+      cnt.delete();approx.delete();
     }
-    gray.delete(); blur.delete(); edges.delete(); contours.delete(); hierarchy.delete();
+    gray.delete();blur.delete();edges.delete();contours.delete();hier.delete();
     return rects;
   }
 
-  // ---------- Tesseract v2: OCR ----------
-  async function ocrFullFrame(canvas) {
-    const { data: { words } } = await Tesseract.recognize(
-  canvas,
-  'eng',
-  {
-    // 学習データをCDNから取得（Safariで安定）
-    langPath: 'https://tessdata.projectnaptha.com/4.0.0',
-    // v2用のWASMコアを明示（読み込み失敗を防ぐ）
-    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.wasm.js',
-    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js',
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-    logger: m => {
-      if (m && m.status) {
-        const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
-        statusSpan.textContent = `${m.status}${pct}`;
-      }
+  // ===== Tesseract v2 recognize with robust options =====
+  const CDN_PRIMARY={
+    workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js',
+    corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.wasm.js',
+    langPath:'https://tessdata.projectnaptha.com/4.0.0'
+  };
+  const CDN_FALLBACK={
+    workerPath:'https://unpkg.com/tesseract.js@2.1.5/dist/worker.min.js',
+    corePath:'https://unpkg.com/tesseract.js-core@2.2.0/tesseract-core.wasm.js',
+    langPath:'https://tessdata.projectnaptha.com/4.0.0'
+  };
+
+  async function ocrFullFrame(canvas){
+    async function run(opts){
+      return await Tesseract.recognize(canvas,'eng',{
+        ...opts,
+        tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        logger:m=>{
+          if(m && m.status){
+            const pct=(m.progress!=null)?` ${Math.round(m.progress*100)}%`:"";
+            statusSpan.textContent=`${m.status}${pct}`;
+          }
+        }
+      });
+    }
+    // 15秒で切ってCDN切替
+    const timeout=ms=>new Promise((_,rej)=>setTimeout(()=>rej(new Error('ocr-timeout')),ms));
+    try{
+      return await Promise.race([run(CDN_PRIMARY), timeout(15000)]);
+    }catch(e){
+      statusSpan.textContent='retrying via fallback CDN…';
+      return await run(CDN_FALLBACK);
     }
   }
-);
-    return words.map(w => ({
-      text: (w.text||"").trim(),
-      box: {x:w.bbox.x0, y:w.bbox.y0, w:w.bbox.x1-w.bbox.x0, h:w.bbox.y1-w.bbox.y0,
-            cx:(w.bbox.x0+w.bbox.x1)/2, cy:(w.bbox.y0+w.bbox.y1)/2},
-      conf: w.confidence ?? 0
-    }));
-  }
 
-  // ---------- 紐づけ / 描画 ----------
-  function associate(rects, texts) {
-    const letters = texts.filter(t => /^[A-Z]$/.test(t.text));
-    const numbers = texts.filter(t => /^\d{2,4}$/.test(t.text));
-    const results = [];
-    for (const r of rects) {
-      const insideLetters = letters.filter(t => (
-        t.box.cx >= r.x+4 && t.box.cx <= r.x + r.w - 4 &&
-        t.box.cy >= r.y+4 && t.box.cy <= r.y + r.h - 4
-      ));
-      let L = null;
-      if (insideLetters.length) {
-        insideLetters.sort((a,b)=> dist({x:a.box.cx,y:a.box.cy},{x:r.cx,y:r.cy}) - dist({x:b.box.cx,y:b.box.cy},{x:r.cx,y:r.cy}));
-        L = insideLetters[0];
-      }
-      const rad = Math.max(r.w, r.h) * 1.2;
-      const nearNumbers = numbers.filter(t => dist({x:t.box.cx,y:t.box.cy},{x:r.cx,y:r.cy}) < rad);
-      let N = null;
-      if (nearNumbers.length) {
-        nearNumbers.sort((a,b)=> dist({x:a.box.cx,y:a.box.cy},{x:r.cx,y:r.cy}) - dist({x:b.box.cx,y:b.box.cy},{x:r.cx,y:r.cy}));
-        N = nearNumbers[0];
-      }
-      if (L || N) results.push({rect:r, L, N});
+  // ===== associate / draw =====
+  function associate(rects,texts){
+    const letters=texts.filter(t=>/^[A-Z]$/.test(t.text));
+    const numbers=texts.filter(t=>/^\d{2,4}$/.test(t.text));
+    const results=[];
+    for(const r of rects){
+      const inside=letters.filter(t=>t.box.cx>=r.x+4&&t.box.cx<=r.x+r.w-4&&t.box.cy>=r.y+4&&t.box.cy<=r.y+r.h-4);
+      let L=null; if(inside.length){ inside.sort((a,b)=>dist({x:a.box.cx,y:a.box.cy},{x:r.cx,y:r.cy})-dist({x:b.box.cx,y:b.box.cy},{x:r.cx,y:r.cy})); L=inside[0];}
+      const rad=Math.max(r.w,r.h)*1.2;
+      const near= numbers.filter(t=>dist({x:t.box.cx,y:t.box.cy},{x:r.cx,y:r.cy})<rad);
+      let N=null; if(near.length){ near.sort((a,b)=>dist({x:a.box.cx,y:a.box.cy},{x:r.cx,y:r.cy})-dist({x:b.box.cx,y:b.box.cy},{x:r.cx,y:r.cy})); N=near[0];}
+      if(L||N) results.push({rect:r,L,N});
     }
     return results;
   }
-
-  function draw(rects, pairs) {
-    ctx.clearRect(0,0,overlay.width, overlay.height);
-    ctx.lineWidth = 2; ctx.strokeStyle = "#00ff88"; ctx.font = "14px SFMono-Regular, Menlo, monospace"; ctx.fillStyle="#00ff88";
-    rects.forEach(r => ctx.strokeRect(r.x, r.y, r.w, r.h));
-    pairs.forEach(p => {
-      const label = `[${p.L?.text ?? "?"}]=${p.N?.text ?? "???"}`;
-      ctx.fillText(label, p.rect.x, p.rect.y - 4);
-    });
+  function draw(rects,pairs){
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+    ctx.lineWidth=2; ctx.strokeStyle="#00ff88"; ctx.font="14px SFMono-Regular,Menlo,monospace"; ctx.fillStyle="#00ff88";
+    rects.forEach(r=>ctx.strokeRect(r.x,r.y,r.w,r.h));
+    pairs.forEach(p=>ctx.fillText(`[${p.L?.text??"?"}]=${p.N?.text??"???"}`,p.rect.x,p.rect.y-4));
   }
-
-  function updateTiles(pairs) {
-    const now = Date.now();
-    for (const p of pairs) {
-      let bestId = null, bestD = 99999;
-      for (const [id,t] of tiles) {
-        const d = dist({x:t.bbox.cx,y:t.bbox.cy},{x:p.rect.cx,y:p.rect.cy});
-        if (d < bestD) { bestD = d; bestId = id; }
+  function updateTiles(pairs){
+    const now=Date.now();
+    for(const p of pairs){
+      let bestId=null,bestD=99999;
+      for(const [id,t] of tiles){
+        const d=dist({x:t.bbox.cx,y:t.bbox.cy},{x:p.rect.cx,y:p.rect.cy});
+        if(d<bestD){bestD=d;bestId=id;}
       }
-      const isNew = bestD > Math.max(p.rect.w, p.rect.h) * 0.8;
-      const id = isNew ? crypto.randomUUID() : bestId;
-      const prev = tiles.get(id) || {};
-      tiles.set(id, {
-        bbox: p.rect,
-        letter: p.L?.text ?? prev.letter ?? null,
-        number: p.N?.text ?? prev.number ?? null,
-        confL: p.L?.conf ?? prev.confL ?? 0,
-        confN: p.N?.conf ?? prev.confN ?? 0,
-        last: now
-      });
+      const isNew=bestD>Math.max(p.rect.w,p.rect.h)*0.8;
+      const id=isNew?crypto.randomUUID():bestId;
+      const prev=tiles.get(id)||{};
+      tiles.set(id,{bbox:p.rect,letter:p.L?.text??prev.letter??null,number:p.N?.text??prev.number??null,
+        confL:p.L?.conf??prev.confL??0,confN:p.N?.conf??prev.confN??0,last:now});
     }
-    for (const [id,t] of [...tiles]) {
-      if (now - t.last > 10000) tiles.delete(id);
-    }
+    for(const [id,t] of [...tiles]) if(now-t.last>10000) tiles.delete(id);
     renderList();
   }
 
-  // ---------- ループ ----------
-  async function loop() {
-    if (!running) return;
-    const w = video.videoWidth, h = video.videoHeight;
-    if (!w || !h) { requestAnimationFrame(loop); return; }
-    overlay.width = off.width = w;
-    overlay.height = off.height = h;
-    const octx = off.getContext('2d');
-    octx.drawImage(video, 0, 0, w, h);
+  // ===== main loop =====
+  async function loop(){
+    if(!running) return;
+    const w=video.videoWidth,h=video.videoHeight;
+    if(!w||!h){requestAnimationFrame(loop);return;}
+    overlay.width=off.width=w; overlay.height=off.height=h;
+    const octx=off.getContext('2d'); octx.drawImage(video,0,0,w,h);
 
-    const frame = cv.imread(off);
-    const rects = detectRectangles(frame);
-    frame.delete();
+    const frame=cv.imread(off); const rects=detectRectangles(frame); frame.delete();
+    const {data:{words}}=await ocrFullFrame(off);
+    const texts=words.map(w=>({ text:(w.text||"").trim(),
+      box:{x:w.bbox.x0,y:w.bbox.y0,w:w.bbox.x1-w.bbox.x0,h:w.bbox.y1-w.bbox.y0,cx:(w.bbox.x0+w.bbox.x1)/2,cy:(w.bbox.y0+w.bbox.y1)/2},
+      conf:w.confidence??0 }));
+    const pairs=associate(rects,texts); draw(rects,pairs); updateTiles(pairs);
 
-    const texts = await ocrFullFrame(off);
-    const pairs = associate(rects, texts);
-    draw(rects, pairs);
-    updateTiles(pairs);
-
-    const t1 = performance.now();
-    frames++; acc += (t1 - lastTime); lastTime = t1;
-    if (acc > 1000) { fpsSpan.textContent = `${frames} fps`; frames = 0; acc = 0; }
-
-    statusSpan.textContent = `rects:${rects.length}  words:${texts.length}`;
-    setTimeout(()=> requestAnimationFrame(loop), 800);
+    const t1=performance.now(); frames++; acc+=(t1-lastTime); lastTime=t1;
+    if(acc>1000){fpsSpan.textContent=`${frames} fps`; frames=0; acc=0;}
+    statusSpan.textContent=`rects:${rects.length}  words:${texts.length}`;
+    setTimeout(()=>requestAnimationFrame(loop),800);
   }
 
-  // ---------- カメラ制御（背面優先＋Flip） ----------
-  let currentStream = null;
-  async function openWith(deviceId) {
-    const constraints = deviceId ? { video: { deviceId: { exact: deviceId } }, audio: false }
-                                 : { video: { facingMode: { ideal: "environment" } }, audio: false };
-    return await navigator.mediaDevices.getUserMedia(constraints);
+  // ===== camera (back + flip) =====
+  async function openWith(deviceId){
+    const c=deviceId?{video:{deviceId:{exact:deviceId}},audio:false}:{video:{facingMode:{ideal:"environment"}},audio:false};
+    return await navigator.mediaDevices.getUserMedia(c);
   }
-  async function pickBackCameraDeviceId() {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videos = devices.filter(d => d.kind === "videoinput");
-    return (videos.find(d => /back|environment|rear/i.test(d.label)) || videos[0])?.deviceId;
+  async function pickBackId(){
+    const ds=await navigator.mediaDevices.enumerateDevices();
+    const vs=ds.filter(d=>d.kind==="videoinput");
+    return (vs.find(d=>/back|environment|rear/i.test(d.label))||vs[0])?.deviceId;
   }
-  function stopCurrent() {
-    (currentStream?.getTracks()||[]).forEach(t=>t.stop());
-    currentStream = null;
-  }
+  function stopCurrent(){ (currentStream?.getTracks()||[]).forEach(t=>t.stop()); currentStream=null; }
 
-  async function start() {
-    if (running) return;
-    startBtn.disabled = true;
-    statusSpan.textContent = "requesting camera…";
-
-    try {
-      // ① environment指定で仮オープン
-      currentStream = await openWith(null);
-      video.setAttribute('playsinline','');
-      video.setAttribute('muted','');
-      video.srcObject = currentStream;
-      await video.play();
-
-      // ② 本当の背面deviceIdで開き直し
-      const backId = await pickBackCameraDeviceId();
-      if (backId) {
-        const track = currentStream.getVideoTracks()[0];
-        const settings = track.getSettings ? track.getSettings() : {};
-        const same = settings.deviceId && settings.deviceId === backId;
-        if (!same) {
-          stopCurrent();
-          currentStream = await openWith(backId);
-          video.srcObject = currentStream;
-          await video.play();
-        }
+  async function start(){
+    if(running) return; startBtn.disabled=true; statusSpan.textContent="requesting camera…";
+    try{
+      currentStream=await openWith(null);
+      video.setAttribute('playsinline',''); video.setAttribute('muted',''); video.srcObject=currentStream; await video.play();
+      const backId=await pickBackId();
+      if(backId){
+        const tr=currentStream.getVideoTracks()[0];
+        const id=tr.getSettings?.().deviceId;
+        if(id!==backId){ stopCurrent(); currentStream=await openWith(backId); video.srcObject=currentStream; await video.play(); }
       }
-    } catch (err) {
-      alert("カメラにアクセスできませんでした。\nSafariの『このWebサイトの設定』でカメラを『許可』にしてください。");
-      startBtn.disabled = false;
-      return;
-    }
-
-    running = true;
-    stopBtn.disabled = false; exportBtn.disabled = false;
-    flipBtn.disabled = false;
-    statusSpan.textContent = "running";
-    loop();
+    }catch(e){ alert("カメラにアクセスできませんでした。Safariの『このWebサイトの設定』でカメラを『許可』にしてください。"); startBtn.disabled=false; return; }
+    running=true; stopBtn.disabled=false; exportBtn.disabled=false; flipBtn.disabled=false; statusSpan.textContent="running"; loop();
   }
+  function stop(){ running=false; stopCurrent(); startBtn.disabled=false; stopBtn.disabled=true; statusSpan.textContent="paused"; }
 
-  function stop() {
-    running = false;
-    stopCurrent();
-    startBtn.disabled = false; stopBtn.disabled = true;
-    statusSpan.textContent = "paused";
-  }
-
-  flipBtn.addEventListener('click', async () => {
-    try {
-      const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
-      if (!devices.length) return;
-      const cur = currentStream?.getVideoTracks()?.[0]?.getSettings?.().deviceId;
-      const backId = await pickBackCameraDeviceId();
-      let nextId = null;
-      if (backId && cur !== backId) nextId = backId;
-      else nextId = devices.find(d => d.deviceId !== cur)?.deviceId || backId || cur;
-      if (nextId) {
-        stopCurrent();
-        currentStream = await openWith(nextId);
-        video.srcObject = currentStream;
-        await video.play();
-      }
-    } catch(e) {
-      console.warn("flip failed", e);
-    }
+  flipBtn.addEventListener('click',async ()=>{
+    try{
+      const ds=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
+      if(!ds.length) return;
+      const cur=currentStream?.getVideoTracks()?.[0]?.getSettings?.().deviceId;
+      const back=await pickBackId();
+      let next=null; if(back && cur!==back) next=back; else next=ds.find(d=>d.deviceId!==cur)?.deviceId||back||cur;
+      if(next){ stopCurrent(); currentStream=await openWith(next); video.srcObject=currentStream; await video.play(); }
+    }catch(e){ console.warn("flip failed",e); }
   });
 
-  // ---------- イベント ----------
-  startBtn.addEventListener('click', start);
-  stopBtn.addEventListener('click', stop);
-  exportBtn.addEventListener('click', exportCSV);
+  // events
+  startBtn.addEventListener('click',start);
+  stopBtn.addEventListener('click',stop);
+  exportBtn.addEventListener('click',exportCSV);
 })();
 </script>
 </body>
