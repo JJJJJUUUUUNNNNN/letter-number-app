@@ -130,19 +130,23 @@
   // ---------- Tesseract v2: OCR ----------
   async function ocrFullFrame(canvas) {
     const { data: { words } } = await Tesseract.recognize(
-      canvas,
-      'eng',
-      {
-        langPath: './tessdata', // 置いていれば同一オリジンから読む
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-        logger: m => {
-          if (m && m.status) {
-            const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
-            statusSpan.textContent = `${m.status}${pct}`;
-          }
-        }
+  canvas,
+  'eng',
+  {
+    // 学習データをCDNから取得（Safariで安定）
+    langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+    // v2用のWASMコアを明示（読み込み失敗を防ぐ）
+    corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.wasm.js',
+    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js',
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+    logger: m => {
+      if (m && m.status) {
+        const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
+        statusSpan.textContent = `${m.status}${pct}`;
       }
-    );
+    }
+  }
+);
     return words.map(w => ({
       text: (w.text||"").trim(),
       box: {x:w.bbox.x0, y:w.bbox.y0, w:w.bbox.x1-w.bbox.x0, h:w.bbox.y1-w.bbox.y0,
