@@ -65,13 +65,12 @@
 
   const tiles = new Map(); // id -> {bbox, letter, number, confL, confN, last}
   // 明示パス＆進捗をステータスに表示
+// ここを置き換え：ワーカーをBlob URLで起動（クロスオリジン問題を回避）
 const tesseract = Tesseract.createWorker({
-  workerPath: 'https://unpkg.com/tesseract.js@4.1.1/dist/worker.min.js',
-  corePath:   'https://unpkg.com/tesseract.js-core@5.0.0/tesseract-core.wasm.js',
-  langPath:   'https://tessdata.projectnaptha.com/4.0.0',
+  workerBlobURL: true, // ←これが重要（Safariで安定）
+  langPath: 'https://tessdata.projectnaptha.com/4.0.0',
   logger: m => {
     if (m && m.status) {
-      // 例: "loading tesseract core 73%"
       const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
       statusSpan.textContent = `${m.status}${pct}`;
     }
