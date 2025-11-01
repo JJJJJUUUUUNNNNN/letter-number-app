@@ -23,6 +23,7 @@
   <button id="startBtn">Start</button>
   <button id="stopBtn" disabled>Pause</button>
   <button id="exportBtn" disabled>Export CSV</button>
+  <button id="flipBtn" disabled>Flip</button>
   <span class="chip" id="fps">— fps</span>
   <span class="chip" id="status">idle</span>
   <div class="note">カメラ上にある四角(牌)とテキストを検出→英字1文字と近くの数字(2–4桁)を紐づけて表示します。</div>
@@ -56,8 +57,9 @@
   const fpsSpan = document.getElementById('fps');
   const statusSpan = document.getElementById('status');
   const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const exportBtn = document.getElementById('exportBtn');
+  const stopBtn  = document.getElementById('stopBtn');
+  const exportBtn= document.getElementById('exportBtn');
+  const flipBtn  = document.getElementById('flipBtn');
 
   let running = false;
   let lastTime = performance.now();
@@ -66,6 +68,7 @@
   const tiles = new Map(); // id -> {bbox, letter, number, confL, confN, last}
   const dist = (a,b) => Math.hypot(a.x - b.x, a.y - b.y);
 
+  // ---------- CSV ----------
   function exportCSV() {
     const lines = [["id","letter","number","confLetter","confNumber","updatedAt"]];
     for (const [id, t] of tiles.entries()) {
@@ -92,6 +95,7 @@
     exportBtn.disabled = tiles.size===0;
   }
 
+  // ---------- OpenCV: 四角検出 ----------
   function detectRectangles(mat) {
     const gray = new cv.Mat();
     const blur = new cv.Mat();
@@ -123,14 +127,13 @@
     return rects;
   }
 
-  // ======= v2 方式：毎回 recognize 呼び出し =======
+  // ---------- Tesseract v2: OCR ----------
   async function ocrFullFrame(canvas) {
     const { data: { words } } = await Tesseract.recognize(
       canvas,
       'eng',
       {
-        // フォルダに tessdata/eng.traineddata(.gz) を置いた場合は同一オリジンから読む
-        langPath: './tessdata',
+        langPath: './tessdata', // 置いていれば同一オリジンから読む
         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
         logger: m => {
           if (m && m.status) {
@@ -147,8 +150,8 @@
       conf: w.confidence ?? 0
     }));
   }
-  // ===============================================
 
+  // ---------- 紐づけ / 描画 ----------
   function associate(rects, texts) {
     const letters = texts.filter(t => /^[A-Z]$/.test(t.text));
     const numbers = texts.filter(t => /^\d{2,4}$/.test(t.text));
@@ -211,6 +214,7 @@
     renderList();
   }
 
+  // ---------- ループ ----------
   async function loop() {
     if (!running) return;
     const w = video.videoWidth, h = video.videoHeight;
@@ -234,53 +238,93 @@
     if (acc > 1000) { fpsSpan.textContent = `${frames} fps`; frames = 0; acc = 0; }
 
     statusSpan.textContent = `rects:${rects.length}  words:${texts.length}`;
-    setTimeout(()=> requestAnimationFrame(loop), 800); // 負荷を少し下げる
+    setTimeout(()=> requestAnimationFrame(loop), 800);
   }
 
-  // ==== カメラを先に確保（段階的にリトライ） ====
+  // ---------- カメラ制御（背面優先＋Flip） ----------
+  let currentStream = null;
+  async function openWith(deviceId) {
+    const constraints = deviceId ? { video: { deviceId: { exact: deviceId } }, audio: false }
+                                 : { video: { facingMode: { ideal: "environment" } }, audio: false };
+    return await navigator.mediaDevices.getUserMedia(constraints);
+  }
+  async function pickBackCameraDeviceId() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videos = devices.filter(d => d.kind === "videoinput");
+    return (videos.find(d => /back|environment|rear/i.test(d.label)) || videos[0])?.deviceId;
+  }
+  function stopCurrent() {
+    (currentStream?.getTracks()||[]).forEach(t=>t.stop());
+    currentStream = null;
+  }
+
   async function start() {
     if (running) return;
     startBtn.disabled = true;
     statusSpan.textContent = "requesting camera…";
 
-    async function openStream() {
-      try {
-        return await navigator.mediaDevices.getUserMedia({ video: { exact: { facingMode: "environment" }}, audio:false });
-      } catch (_){
-        try {
-          return await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio:false });
-        } catch (_){
-          return await navigator.mediaDevices.getUserMedia({ video: true, audio:false });
-        }
-      }
-    }
-
     try {
-      const stream = await openStream();
+      // ① environment指定で仮オープン
+      currentStream = await openWith(null);
       video.setAttribute('playsinline','');
       video.setAttribute('muted','');
-      video.srcObject = stream;
+      video.srcObject = currentStream;
       await video.play();
+
+      // ② 本当の背面deviceIdで開き直し
+      const backId = await pickBackCameraDeviceId();
+      if (backId) {
+        const track = currentStream.getVideoTracks()[0];
+        const settings = track.getSettings ? track.getSettings() : {};
+        const same = settings.deviceId && settings.deviceId === backId;
+        if (!same) {
+          stopCurrent();
+          currentStream = await openWith(backId);
+          video.srcObject = currentStream;
+          await video.play();
+        }
+      }
     } catch (err) {
       alert("カメラにアクセスできませんでした。\nSafariの『このWebサイトの設定』でカメラを『許可』にしてください。");
       startBtn.disabled = false;
       return;
     }
 
-    running = true; // v2はここでrunningにする
+    running = true;
     stopBtn.disabled = false; exportBtn.disabled = false;
+    flipBtn.disabled = false;
     statusSpan.textContent = "running";
     loop();
   }
-  // ================================================
 
   function stop() {
     running = false;
-    (video.srcObject?.getTracks()||[]).forEach(t=>t.stop());
+    stopCurrent();
     startBtn.disabled = false; stopBtn.disabled = true;
     statusSpan.textContent = "paused";
   }
 
+  flipBtn.addEventListener('click', async () => {
+    try {
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
+      if (!devices.length) return;
+      const cur = currentStream?.getVideoTracks()?.[0]?.getSettings?.().deviceId;
+      const backId = await pickBackCameraDeviceId();
+      let nextId = null;
+      if (backId && cur !== backId) nextId = backId;
+      else nextId = devices.find(d => d.deviceId !== cur)?.deviceId || backId || cur;
+      if (nextId) {
+        stopCurrent();
+        currentStream = await openWith(nextId);
+        video.srcObject = currentStream;
+        await video.play();
+      }
+    } catch(e) {
+      console.warn("flip failed", e);
+    }
+  });
+
+  // ---------- イベント ----------
   startBtn.addEventListener('click', start);
   stopBtn.addEventListener('click', stop);
   exportBtn.addEventListener('click', exportCSV);
