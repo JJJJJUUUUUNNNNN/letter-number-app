@@ -65,10 +65,10 @@
 
   const tiles = new Map(); // id -> {bbox, letter, number, confL, confN, last}
   // 明示パス＆進捗をステータスに表示
-// ここを置き換え：ワーカーをBlob URLで起動（クロスオリジン問題を回避）
+// Blobワーカー + 同一オリジンの学習データを使用
 const tesseract = Tesseract.createWorker({
-  workerBlobURL: true, // ←これが重要（Safariで安定）
-  langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+  workerBlobURL: true,            // Safari安定化
+  langPath: './tessdata',         // ← ここがポイント（自分のリポ内を参照）
   logger: m => {
     if (m && m.status) {
       const pct = m.progress != null ? ` ${Math.round(m.progress*100)}%` : '';
