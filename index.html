@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Letter-Number Linker (Static OCR)</title>
+  <title>Letter-Number Linker (Camera + Static OCR)</title>
 
   <!-- Tesseract.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -68,11 +68,47 @@
     .status.ok{ color:#7dffb1;}
     .status.warn{ color:#ffd27d;}
     .status.err{ color:#ff7d7d;}
+
+    .camWrap{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+    }
+    video{
+      width:100%;
+      max-height:62vh;
+      background:#000;
+      border-radius:14px;
+      border:2px solid var(--border);
+      object-fit:contain;
+    }
+    .smallNote{ font-size:12px; color:#aeecc9;}
   </style>
 </head>
 <body>
 <div class="wrap">
 
+  <!-- Camera -->
+  <div class="panel">
+    <h3>カメラ（静止キャプチャ→OCR）</h3>
+    <div class="row">
+      <button id="camStartBtn" class="btn secondary">カメラ開始</button>
+      <button id="camStopBtn" class="btn secondary" disabled>停止</button>
+      <button id="camFlipBtn" class="btn secondary" disabled>外/内 切替</button>
+      <button id="camSnapBtn" class="btn" disabled>1回OCR</button>
+      <div class="pill"><span class="status" id="status">idle</span></div>
+    </div>
+    <div class="hint" style="margin-top:8px;">
+      iPhoneは「リアルタイム連続OCR」だと落ちやすいので、<b>1枚キャプチャしてOCR</b>が安定です。<br/>
+      使い方：①カメラ開始 → ②牌を2〜3枚だけ大きく映す → ③1回OCR
+      <div class="smallNote">※ カメラ許可が出ない場合：URLバー左の「ぁあ/鍵」→ Webサイト設定 → カメラ=許可</div>
+    </div>
+    <div class="camWrap" style="margin-top:10px;">
+      <video id="video" playsinline muted></video>
+    </div>
+  </div>
+
+  <!-- Upload -->
   <div class="panel">
     <div class="row" style="justify-content:space-between;">
       <div class="row">
@@ -88,7 +124,8 @@
       </div>
 
       <div class="pill">
-        <span class="status" id="status">idle</span>
+        <span class="mono">tessdata:</span>
+        <strong class="mono">./tessdata/eng.traineddata.gz</strong>
       </div>
     </div>
 
@@ -110,9 +147,8 @@
       </div>
 
       <div class="hint" style="margin-top:10px;">
-        使い方：①写真を複数選ぶ → ②「OCR実行」 → ③下の検索で英字1文字を入力<br/>
         ※ 数字は <b>必ず3桁（000〜410）</b>として扱います。2桁は捨てます。<br/>
-        ※ iPhone Safari が落ちる場合は、縮小幅を <b>240→180</b> にしてください（Chrome推奨）。
+        ※ Safariで落ちる場合は縮小幅を <b>240→180</b> にしてください（Chrome推奨）。
       </div>
 
       <div class="row" style="margin-top:10px; gap:16px;">
@@ -131,7 +167,7 @@
       <button id="csvBtn" class="btn secondary">CSV出力</button>
     </div>
     <div class="hint" style="margin-top:8px;">
-      結果は「英字の位置」と「近い数字(3桁)」を紐づけます（画像内の距離＋“数字が上”を優先）。
+      結果は「英字の位置」と「近い数字(3桁)」を紐づけます（距離＋“数字が上”を少し優先）。
     </div>
   </div>
 
@@ -165,8 +201,8 @@
 <script>
 (() => {
   // ====== Storage ======
-  const LS_KEY = "lnlinker_results_v3";
-  const LS_VER = 3;
+  const LS_KEY = "lnlinker_results_v4";
+  const LS_VER = 4;
 
   // ====== UI refs ======
   const fileInput = document.getElementById("fileInput");
@@ -193,11 +229,22 @@
 
   const logEl = document.getElementById("log");
 
+  // Camera
+  const camStartBtn = document.getElementById("camStartBtn");
+  const camStopBtn = document.getElementById("camStopBtn");
+  const camFlipBtn = document.getElementById("camFlipBtn");
+  const camSnapBtn = document.getElementById("camSnapBtn");
+  const video = document.getElementById("video");
+
   // ====== State ======
   let maxW = 240;
   let files = [];      // File[]
   let pending = [];    // {file, id}[]
   let results = loadResults(); // saved results
+
+  // Camera state
+  let stream = null;
+  let facing = "environment"; // default back camera
 
   // ====== Helpers ======
   function log(msg) {
@@ -248,13 +295,11 @@
   }
 
   function extractSingleLetters(text) {
-    // A-Z 1文字だけ（周囲が英字でない）
     const m = text.match(/(?<![A-Z])[A-Z](?![A-Z])/g) || [];
     return m;
   }
 
   function centerOfBBox(b) {
-    // tesseract bbox: { x0,y0,x1,y1 }
     return { x: (b.x0 + b.x1)/2, y: (b.y0 + b.y1)/2 };
   }
 
@@ -264,9 +309,8 @@
   }
 
   function preferScore(letterPt, numPt) {
-    // “数字が上”を優先：数字のyが小さいほど加点（=スコアを下げる）
     const d = dist(letterPt, numPt);
-    const aboveBonus = (numPt.y < letterPt.y) ? -0.20 * d : 0; // 上なら少し優遇
+    const aboveBonus = (numPt.y < letterPt.y) ? -0.25 * d : 0;
     return d + aboveBonus;
   }
 
@@ -284,8 +328,6 @@
       const imgData = ctx.getImageData(0,0,w,h);
       const d = imgData.data;
 
-      // grayscale + simple threshold (Otsuは重いので固定寄り)
-      // まず輝度を作りながら平均を取って閾値推定
       let sum = 0;
       const lum = new Uint8Array(w*h);
       for (let i=0, j=0; i<d.length; i+=4, j++){
@@ -293,7 +335,6 @@
         lum[j] = y; sum += y;
       }
       const mean = sum / lum.length;
-      // 牌が白/背景が暗い前提で少し高めに
       const th = clampInt(Math.round(mean + 10), 80, 200);
 
       for (let i=0, j=0; i<d.length; i+=4, j++){
@@ -308,28 +349,19 @@
   }
 
   async function createWorkerSafe() {
-    // tessdata は repo の /tessdata/ に置いている想定
-    // 例: https://xxxxx.github.io/letter-number-app/tessdata/eng.traineddata.gz
     const tessdataPath = "./tessdata";
-
-    // tesseract.js v5
     const worker = await Tesseract.createWorker("eng", 1, {
       logger: m => {
-        if (m && m.status) {
-          if (m.status === "recognizing text") {
-            setStatus(`recognizing ${Math.round((m.progress||0)*100)}%`, "warn");
-          }
+        if (m && m.status === "recognizing text") {
+          setStatus(`recognizing ${Math.round((m.progress||0)*100)}%`, "warn");
         }
       },
       langPath: tessdataPath,
-      // corePath を固定しない（CDN版の標準を使う）
     });
-
     return worker;
   }
 
   async function ocrWords(worker, canvas, mode) {
-    // mode: "letters" | "numbers"
     if (mode === "letters") {
       await worker.setParameters({
         tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
@@ -341,7 +373,6 @@
         preserve_interword_spaces: "1",
       });
     }
-
     const { data } = await worker.recognize(canvas);
     return (data && data.words) ? data.words : [];
   }
@@ -350,25 +381,19 @@
     return String(w.text || "")
       .replace(/\s+/g, "")
       .toUpperCase()
-      // よくある誤読対策（必要なら増やせます）
       .replace(/O/g, "0");
   }
 
   function buildPairs(letterWords, numberWords, imgName) {
-    // letters: 1文字だけ
     const letters = [];
     for (const w of letterWords) {
       const t = normalizeWordText(w);
       const one = extractSingleLetters(t);
-      if (!one || one.length === 0) continue;
-      // words の中に2文字入ってる場合があるので、単一文字だけ採用
-      // bboxは同一にする（簡易）
-      if (one.length === 1) {
+      if (one && one.length === 1) {
         letters.push({ letter: one[0], bbox: w.bbox, conf: w.confidence ?? 0 });
       }
     }
 
-    // numbers: 3桁だけ + 000〜410
     const nums = [];
     for (const w of numberWords) {
       const t = normalizeWordText(w);
@@ -388,15 +413,13 @@
         const np = centerOfBBox(N.bbox);
         const score = preferScore(lp, np);
         const d = dist(lp, np);
-        if (!best || score < best.score) {
-          best = { N, score, d };
-        }
+        if (!best || score < best.score) best = { N, score, d };
       }
 
       if (best) {
         pairs.push({
           letter: L.letter,
-          number: best.N.num,            // "032"などゼロ保持
+          number: best.N.num,
           dist: Math.round(best.d),
           conf: Math.round((best.N.conf ?? 0) * 10) / 10,
           image: imgName,
@@ -404,15 +427,13 @@
         });
       }
     }
-
     return { lettersCount: letters.length, numsCount: nums.length, pairs };
   }
 
-  async function processOne(file) {
-    const name = file.name || `image_${Date.now()}`;
+  async function processOne(file, labelName) {
+    const name = labelName || file.name || `image_${Date.now()}`;
     log(`--- ${name} ---`);
 
-    // read image
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.decoding = "async";
@@ -427,7 +448,6 @@
     URL.revokeObjectURL(url);
     log(`canvas ${w}x${h} (maxW=${maxW}) binarize=${binarizeEl.checked}`);
 
-    // worker (create each time to reduce Safari crash; Chromeでも安定)
     setStatus("creating worker...", "warn");
     const worker = await createWorkerSafe();
 
@@ -441,11 +461,9 @@
       const built = buildPairs(letterWords, numberWords, name);
       log(`letters=${built.lettersCount}, numbers=${built.numsCount}, pairs=${built.pairs.length}`);
 
-      // save results (append; avoid duplicates by (image, letter) last-win)
       const map = new Map(results.map(r => [`${r.image}__${r.letter}`, r]));
-      for (const p of built.pairs) {
-        map.set(`${p.image}__${p.letter}`, p);
-      }
+      for (const p of built.pairs) map.set(`${p.image}__${p.letter}`, p);
+
       results = Array.from(map.values()).sort((a,b) => b.ts - a.ts);
       saveResults();
       renderTable(results, null);
@@ -468,7 +486,7 @@
     resultTable.style.display = "";
     resultBody.innerHTML = "";
 
-    list.slice(0, 200).forEach((r, idx) => {
+    list.slice(0, 300).forEach((r, idx) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td class="mono">${idx+1}</td>
@@ -529,10 +547,103 @@
     URL.revokeObjectURL(url);
   }
 
-  // ====== Events ======
-  wButtons.forEach(b => {
-    b.addEventListener("click", () => setMaxW(Number(b.dataset.w)));
-  });
+  // ====== Camera ======
+  async function startCamera() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("このブラウザはカメラAPIに対応していません。");
+        return;
+      }
+
+      setStatus("starting camera...", "warn");
+
+      // stop existing
+      stopCamera();
+
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await video.play();
+
+      camStopBtn.disabled = false;
+      camFlipBtn.disabled = false;
+      camSnapBtn.disabled = false;
+
+      setStatus("camera ready", "ok");
+      log(`camera started (facing=${facing})`);
+    } catch (e) {
+      console.error(e);
+      log(`CAM ERROR: ${e && e.message ? e.message : String(e)}`);
+      setStatus("camera error", "err");
+      alert("カメラが開始できませんでした。\nURLバー左の設定でカメラを「許可」にしてください。");
+    }
+  }
+
+  function stopCamera() {
+    if (stream) {
+      for (const tr of stream.getTracks()) tr.stop();
+      stream = null;
+    }
+    video.pause();
+    video.srcObject = null;
+
+    camStopBtn.disabled = true;
+    camFlipBtn.disabled = true;
+    camSnapBtn.disabled = true;
+
+    setStatus("idle");
+    log("camera stopped");
+  }
+
+  async function flipCamera() {
+    facing = (facing === "environment") ? "user" : "environment";
+    await startCamera();
+  }
+
+  async function snapAndOCR() {
+    if (!stream) return;
+
+    try {
+      setStatus("capturing...", "warn");
+
+      // Capture current video frame to canvas
+      const vw = video.videoWidth || 1280;
+      const vh = video.videoHeight || 720;
+
+      const cap = document.createElement("canvas");
+      cap.width = vw; cap.height = vh;
+      const ctx = cap.getContext("2d");
+      ctx.drawImage(video, 0, 0, vw, vh);
+
+      // Convert to blob -> File
+      const blob = await new Promise(res => cap.toBlob(res, "image/jpeg", 0.92));
+      if (!blob) throw new Error("capture failed");
+
+      const ts = new Date();
+      const fname = `CAM_${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}_${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}${String(ts.getSeconds()).padStart(2,'0')}.jpg`;
+      const file = new File([blob], fname, { type:"image/jpeg" });
+
+      // OCR directly (1回)
+      await processOne(file, fname);
+
+    } catch (e) {
+      console.error(e);
+      log(`SNAP/OCR ERROR: ${e && e.message ? e.message : String(e)}`);
+      setStatus("ERROR", "err");
+      alert("OCRでエラーが出ました。縮小幅を240→180にして再試行してください。");
+    }
+  }
+
+  // ====== Upload flow ======
+  wButtons.forEach(b => b.addEventListener("click", () => setMaxW(Number(b.dataset.w))));
   setMaxW(240);
 
   fileInput.addEventListener("change", () => {
@@ -542,24 +653,22 @@
     runBtn.disabled = pending.length === 0;
     updateCounts();
     log(`selected files: ${files.length}`);
-    setStatus(files.length ? "ready" : "idle");
+    setStatus(files.length ? "ready(upload)" : "idle", files.length ? "ok" : "");
   });
 
   runBtn.addEventListener("click", async () => {
     runBtn.disabled = true;
     try {
-      // 1枚ずつ確実に
       while (pending.length > 0) {
         updateCounts();
         const item = pending.shift();
         updateCounts();
         try {
-          await processOne(item.file);
+          await processOne(item.file, item.file.name);
         } catch (e) {
           console.error(e);
           log(`ERROR: ${e && e.message ? e.message : String(e)}`);
-          setStatus("ERROR: abort/failed", "err");
-          // ここで止める（端末保護）
+          setStatus("ERROR: failed", "err");
           break;
         }
       }
@@ -580,10 +689,14 @@
   });
 
   searchBtn.addEventListener("click", doSearch);
-  searchInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") doSearch();
-  });
+  searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
   csvBtn.addEventListener("click", downloadCSV);
+
+  // Camera events
+  camStartBtn.addEventListener("click", startCamera);
+  camStopBtn.addEventListener("click", stopCamera);
+  camFlipBtn.addEventListener("click", flipCamera);
+  camSnapBtn.addEventListener("click", snapAndOCR);
 
   // init
   renderTable(results);
