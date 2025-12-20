@@ -1,113 +1,137 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>OCR Debug</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<style>
-  body{margin:0;background:#000;color:#0f0;font-family:system-ui}
-  #video{width:100%;max-height:60vh;object-fit:contain;background:#111}
-  button{margin:6px;padding:10px}
-  #status{padding:8px;font-weight:700}
-  pre{white-space:pre-wrap;word-break:break-word;padding:10px;margin:0;color:#9f9}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Letter-Number OCR (Single Shot)</title>
+
+  <!-- tesseract.js v2系：iOS Safariで比較的安定 -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
+
+  <style>
+    :root { --bg:#061006; --fg:#c7f7c7; --accent:#2a7; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system; }
+    header { position:sticky; top:0; z-index:10; background:#073; padding:10px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    button { padding:10px 12px; border:0; border-radius:10px; background:#1b5; color:#fff; font-weight:700; }
+    button:disabled { opacity:.5; }
+    #status { margin-top:8px; font-weight:800; }
+    video { width:100%; max-height:58vh; object-fit:contain; background:#000; }
+    .wrap { padding:10px; }
+    textarea { width:100%; height:160px; background:#001800; color:#bff; border:1px solid #0a4; border-radius:10px; padding:10px; }
+    .hint { opacity:.85; font-size:13px; margin-top:6px; line-height:1.35; }
+    .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
 </head>
+
 <body>
-  <div>
-    <button id="start">Start</button>
-    <button id="flip">Flip</button>
+<header>
+  <div class="row">
+    <button id="btnCam">カメラ開始</button>
+    <button id="btnFlip">外/内 切替</button>
+    <button id="btnShot" disabled>1回OCR</button>
   </div>
-  <div id="status">idle</div>
-  <video id="video" autoplay playsinline muted></video>
-  <pre id="log"></pre>
+  <div id="status" class="mono">idle</div>
+</header>
+
+<video id="video" autoplay playsinline muted></video>
+
+<div class="wrap">
+  <div class="hint">
+    まず「カメラ開始」→ 牌を2〜3枚だけ大きく映して →「1回OCR」。<br>
+    iPhoneでも確実に動かすため、リアルタイムではなく“単発”で認識します。
+  </div>
+  <h3>認識テキスト</h3>
+  <textarea id="out" class="mono" readonly></textarea>
+</div>
 
 <script>
 const video = document.getElementById('video');
 const statusEl = document.getElementById('status');
-const logEl = document.getElementById('log');
+const outEl = document.getElementById('out');
+
+const btnCam  = document.getElementById('btnCam');
+const btnFlip = document.getElementById('btnFlip');
+const btnShot = document.getElementById('btnShot');
 
 let stream = null;
-let facing = "environment";
-let worker = null;
+let facing = "environment"; // 外カメラ優先
 
-function log(s){
-  logEl.textContent = (logEl.textContent + "\n" + s).trim();
-}
+function setStatus(s){ statusEl.textContent = s; }
 
-async function startCamera() {
+async function startCamera(){
   if (stream) stream.getTracks().forEach(t => t.stop());
+  setStatus("starting camera...");
   stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: facing }, width:{ideal:640}, height:{ideal:480} },
-    audio: false
+    video: {
+      facingMode: { ideal: facing },
+      width:  { ideal: 640 },
+      height: { ideal: 480 }
+    },
+    audio:false
   });
   video.srcObject = stream;
   await video.play();
+  btnShot.disabled = false;
+  setStatus("camera ready");
 }
 
-async function checkFetch(url){
-  try{
-    const r = await fetch(url, { cache: "no-store" });
-    log(`fetch ${url} -> ${r.status}`);
-    return r.ok;
-  }catch(e){
-    log(`fetch error ${url} -> ${e}`);
-    return false;
-  }
+// videoの現在フレームを縮小キャンバスに描画してOCR（高速化）
+function captureToCanvas(maxW=640){
+  const c = document.createElement('canvas');
+  const vw = video.videoWidth || 640;
+  const vh = video.videoHeight || 480;
+  const scale = Math.min(1, maxW / vw);
+  c.width  = Math.round(vw * scale);
+  c.height = Math.round(vh * scale);
+  const ctx = c.getContext('2d', { willReadFrequently:true });
+  ctx.drawImage(video, 0, 0, c.width, c.height);
+  return c;
 }
 
-document.getElementById('flip').onclick = async () => {
-  facing = facing === "environment" ? "user" : "environment";
+btnCam.onclick = startCamera;
+
+btnFlip.onclick = async () => {
+  facing = (facing === "environment") ? "user" : "environment";
   await startCamera();
 };
 
-document.getElementById('start').onclick = async () => {
+btnShot.onclick = async () => {
   try{
-    statusEl.textContent = "starting camera...";
-    logEl.textContent = "";
-    await startCamera();
+    btnShot.disabled = true;
+    outEl.value = "";
+    setStatus("capturing...");
+    const canvas = captureToCanvas(720);
 
-    // ★重要：tessdata を「絶対URL」に固定（GitHub Pages対策）
-    const base = location.origin + location.pathname.replace(/\/?$/, "/"); // 末尾を必ず /
-    const langBase = base + "tessdata";
-    const trained = langBase + "/eng.traineddata.gz";
+    // GitHub Pages 上の tessdata を絶対URLで指定（これが安定）
+    const base = location.origin + location.pathname.replace(/\/?$/, "/");
+    const langPath = base + "tessdata";
 
-    statusEl.textContent = "checking traineddata...";
-    await checkFetch(trained); // ここで200が出れば配置OK
-
-    statusEl.textContent = "creating worker...";
-    log("createWorker...");
-
-    // ★重要：worker/core を明示（iOS Safari対策）
-    worker = await Tesseract.createWorker({
-      workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
-      corePath:   "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js",
-      langPath:   langBase,
-      logger: m => {
-        if (m?.status) statusEl.textContent = `${m.status} ${m.progress!=null?Math.round(m.progress*100)+'%':''}`.trim();
+    setStatus("recognizing...");
+    const res = await Tesseract.recognize(
+      canvas,
+      "eng",
+      {
+        langPath,
+        tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        logger: m => {
+          if (m && m.status) {
+            const pct = (m.progress != null) ? ` ${Math.round(m.progress*100)}%` : "";
+            setStatus(m.status + pct);
+          }
+        }
       }
-    });
+    );
 
-    statusEl.textContent = "loading language...";
-    await worker.loadLanguage("eng");
-
-    statusEl.textContent = "initializing...";
-    await worker.initialize("eng");
-
-    statusEl.textContent = "OCR running";
-    log("OCR running ✅");
-
-    // 3秒ごとに全体OCR（まず動作確認用）
-    setInterval(async () => {
-      const { data } = await worker.recognize(video);
-      log("---- recognize ----");
-      log((data.text || "").slice(0, 400)); // 先頭だけ表示
-    }, 3000);
+    const text = (res?.data?.text || "").trim();
+    outEl.value = text || "(no text)";
+    setStatus("done ✅");
 
   }catch(e){
-    statusEl.textContent = "ERROR (see log)";
-    log("ERROR: " + (e?.message || e));
     console.error(e);
+    setStatus("ERROR: " + (e?.message || e));
+  }finally{
+    btnShot.disabled = false;
   }
 };
 </script>
