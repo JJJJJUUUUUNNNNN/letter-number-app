@@ -1,710 +1,629 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Letter-Number Linker (Camera + Static OCR)</title>
-
-  <!-- Tesseract.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Letter-Number Linker (iPhone向け)</title>
   <style>
     :root{
-      --bg:#062b16;
-      --panel:#0b3a1f;
-      --panel2:#0a2f19;
-      --border:#0e6d3b;
-      --text:#d5ffe7;
-      --muted:#9fe7c0;
-      --btn:#1c8b4f;
-      --btn2:#146d3d;
-      --danger:#a13b3b;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --bg:#071b10; --panel:#0b2a19; --line:#1a5a37; --txt:#d7ffe9; --muted:#93c9ae; --btn:#168a55;
     }
-    body{ margin:0; background:var(--bg); color:var(--text); font-family:-apple-system, system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;}
-    .wrap{ max-width:900px; margin:0 auto; padding:12px 12px 24px;}
-    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
-    .panel{ background:var(--panel); border:2px solid var(--border); border-radius:14px; padding:12px; margin-top:12px;}
-    .panel h3{ margin:0 0 8px; font-size:18px;}
-    .hint{ color:var(--muted); font-size:13px; line-height:1.45; }
-    .btn{ background:var(--btn); color:#fff; border:0; padding:10px 14px; border-radius:12px; font-weight:700; cursor:pointer; }
-    .btn:disabled{ opacity:.5; cursor:not-allowed;}
-    .btn.secondary{ background:var(--btn2); }
-    .btn.danger{ background:var(--danger); }
-    .pill{ display:inline-flex; gap:8px; align-items:center; border:2px solid var(--border); border-radius:999px; padding:6px 10px; background:var(--panel2); }
-    .pill strong{ font-family:var(--mono); }
-    .wbtn{ background:transparent; color:var(--text); border:2px solid var(--border); border-radius:12px; padding:8px 12px; font-weight:800; cursor:pointer;}
-    .wbtn.active{ background:var(--btn2); }
-    input[type="text"]{
-      background:var(--panel2);
-      border:2px solid var(--border);
-      border-radius:12px;
-      color:var(--text);
-      padding:10px 12px;
-      font-size:16px;
-      outline:none;
-      width:min(420px, 100%);
-    }
-    .filebox{
-      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-      border:2px solid var(--border); border-radius:14px; padding:10px; background:var(--panel2);
-    }
-    .filebox input[type="file"]{ display:none; }
-    .filelabel{
-      background:var(--btn2); color:#fff; padding:10px 12px; border-radius:12px; font-weight:800; cursor:pointer;
-    }
-    .table{ width:100%; border-collapse:collapse; font-size:14px;}
-    .table th, .table td{ border-bottom:1px solid rgba(14,109,59,.45); padding:10px 8px; text-align:left; }
-    .table th{ color:#bfffdc; font-weight:800;}
-    .mono{ font-family:var(--mono); }
-    .log{
-      background:#041a0d; border:2px solid var(--border); border-radius:14px; padding:10px;
-      font-family:var(--mono); font-size:12px; white-space:pre-wrap; max-height:240px; overflow:auto;
-      color:#b7ffd7;
-    }
-    .status{
-      font-family:var(--mono); font-weight:900; font-size:14px;
-    }
-    .status.ok{ color:#7dffb1;}
-    .status.warn{ color:#ffd27d;}
-    .status.err{ color:#ff7d7d;}
-
-    .camWrap{
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:10px;
-    }
-    video{
-      width:100%;
-      max-height:62vh;
-      background:#000;
-      border-radius:14px;
-      border:2px solid var(--border);
-      object-fit:contain;
-    }
-    .smallNote{ font-size:12px; color:#aeecc9;}
+    body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial;}
+    header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#0b3a22,#072015);padding:10px 12px;border-bottom:1px solid #0f3b25}
+    h1{font-size:16px;margin:0 0 8px 0}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    button{background:var(--btn);border:none;color:white;padding:10px 12px;border-radius:10px;font-weight:700}
+    button.secondary{background:#0f5a38}
+    button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+    button:disabled{opacity:.5}
+    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);padding:8px 10px;border-radius:999px;color:var(--muted)}
+    main{padding:12px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin:12px 0}
+    .card h2{font-size:14px;margin:0 0 10px 0;color:var(--txt)}
+    label{color:var(--muted);font-size:12px}
+    input[type="text"]{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:#062013;color:var(--txt);font-size:16px}
+    input[type="file"]{width:100%}
+    .grid{display:grid;grid-template-columns:1fr;gap:10px}
+    .help{color:var(--muted);font-size:12px;line-height:1.5}
+    .videoWrap{position:relative;background:black;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+    video{width:100%;height:auto;display:block;background:black}
+    canvas#work{display:none}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:10px;border-bottom:1px solid #123f27;text-align:left}
+    th{color:var(--muted);font-weight:700}
+    .log{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;white-space:pre-wrap;color:#b9ffd9}
+    .ok{color:#7CFFA8;font-weight:800}
+    .warn{color:#ffd27c;font-weight:800}
+    .err{color:#ff8a8a;font-weight:900}
+    .mini{font-size:12px;color:var(--muted)}
+    .chips{display:flex;gap:8px;flex-wrap:wrap}
+    .chip{border:1px solid var(--line);border-radius:999px;padding:8px 10px;color:var(--txt);background:#061c11}
+    .chip.active{background:#0f5a38}
   </style>
 </head>
 <body>
-<div class="wrap">
+<header>
+  <h1>Letter-Number Linker（静止/カメラ）</h1>
+  <div class="row">
+    <button id="camStartBtn">カメラ開始</button>
+    <button id="camStopBtn" class="secondary" disabled>停止</button>
+    <button id="flipBtn" class="ghost" disabled>外/内 切替</button>
+    <button id="snapOcrBtn" class="secondary" disabled>1回OCR</button>
+    <span class="pill"><span id="status">idle</span> <span id="fps"></span></span>
+  </div>
+</header>
 
-  <!-- Camera -->
-  <div class="panel">
-    <h3>カメラ（静止キャプチャ→OCR）</h3>
+<main>
+  <div class="card">
+    <h2>設定</h2>
+    <div class="grid">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div class="mini">縮小幅(px)（iPhoneは 320→240→180 の順で試す）</div>
+          <div class="chips">
+            <button class="chip" data-w="320" id="w320">320</button>
+            <button class="chip" data-w="240" id="w240">240</button>
+            <button class="chip" data-w="180" id="w180">180</button>
+          </div>
+        </div>
+        <div class="pill">現在: <b id="maxWLabel">320</b>px</div>
+      </div>
+
+      <div class="row" style="justify-content:space-between">
+        <label class="pill" style="gap:10px">
+          <input type="checkbox" id="binarize" checked />
+          二値化（数字が消えるならOFF）
+        </label>
+        <label class="pill" style="gap:10px">
+          <input type="checkbox" id="preferAbove" checked />
+          数字が「上」にあるのを少し優先
+        </label>
+      </div>
+
+      <div class="help">
+        ✅ 数字は <b>000〜410 / 必ず3桁</b>として扱います（範囲外や桁崩れは除外）。<br/>
+        ✅ iPhoneで落ちる/止まる場合：縮小幅を下げる or 二値化OFF。<br/>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>写真を追加（複数OK）</h2>
     <div class="row">
-      <button id="camStartBtn" class="btn secondary">カメラ開始</button>
-      <button id="camStopBtn" class="btn secondary" disabled>停止</button>
-      <button id="camFlipBtn" class="btn secondary" disabled>外/内 切替</button>
-      <button id="camSnapBtn" class="btn" disabled>1回OCR</button>
-      <div class="pill"><span class="status" id="status">idle</span></div>
+      <input id="fileInput" type="file" accept="image/*" multiple />
     </div>
-    <div class="hint" style="margin-top:8px;">
-      iPhoneは「リアルタイム連続OCR」だと落ちやすいので、<b>1枚キャプチャしてOCR</b>が安定です。<br/>
-      使い方：①カメラ開始 → ②牌を2〜3枚だけ大きく映す → ③1回OCR
-      <div class="smallNote">※ カメラ許可が出ない場合：URLバー左の「ぁあ/鍵」→ Webサイト設定 → カメラ=許可</div>
+    <div class="row" style="margin-top:10px">
+      <button id="runFilesBtn" class="secondary">OCR実行（1枚ずつ）</button>
+      <button id="clearBtn" class="ghost">全削除</button>
+      <span class="pill">読み込んだ写真: <b id="fileCount">0</b>枚 / 未処理: <b id="pendingCount">0</b>枚</span>
+      <span class="pill">保存済み結果: <b id="savedCount">0</b>件</span>
     </div>
-    <div class="camWrap" style="margin-top:10px;">
+  </div>
+
+  <div class="card">
+    <h2>カメラ</h2>
+    <div class="videoWrap">
       <video id="video" playsinline muted></video>
     </div>
+    <div class="help" style="margin-top:10px">
+      ①「カメラ開始」→ ② 数字が見える距離まで寄る → ③「1回OCR」<br/>
+      ※ iPhoneは連続OCRより<b>単発</b>の方が安定します。
+    </div>
+    <canvas id="work"></canvas>
   </div>
 
-  <!-- Upload -->
-  <div class="panel">
-    <div class="row" style="justify-content:space-between;">
-      <div class="row">
-        <div class="filebox">
-          <div style="font-weight:900;">写真を追加</div>
-          <label class="filelabel" for="fileInput">ファイルを選択</label>
-          <input id="fileInput" type="file" accept="image/*" multiple />
-          <div class="pill"><span class="mono" id="selectedName">未選択</span></div>
-        </div>
-
-        <button id="runBtn" class="btn" disabled>OCR実行（1枚ずつ）</button>
-        <button id="clearBtn" class="btn danger">全削除</button>
-      </div>
-
-      <div class="pill">
-        <span class="mono">tessdata:</span>
-        <strong class="mono">./tessdata/eng.traineddata.gz</strong>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-top:12px;">
-      <div class="row" style="justify-content:space-between;">
-        <div class="row">
-          <div style="font-weight:900;">縮小幅(px)：</div>
-          <button class="wbtn" data-w="320">320</button>
-          <button class="wbtn" data-w="240">240</button>
-          <button class="wbtn" data-w="180">180</button>
-          <div class="pill">=<strong id="maxWLabel" class="mono">240</strong></div>
-        </div>
-        <div class="row">
-          <label class="pill" style="cursor:pointer;">
-            <input id="binarize" type="checkbox" style="transform:scale(1.2); margin-right:8px;" checked />
-            二値化（おすすめ）
-          </label>
-        </div>
-      </div>
-
-      <div class="hint" style="margin-top:10px;">
-        ※ 数字は <b>必ず3桁（000〜410）</b>として扱います。2桁は捨てます。<br/>
-        ※ Safariで落ちる場合は縮小幅を <b>240→180</b> にしてください（Chrome推奨）。
-      </div>
-
-      <div class="row" style="margin-top:10px; gap:16px;">
-        <div class="pill">読み込んだ写真：<strong id="photoCount" class="mono">0</strong>枚</div>
-        <div class="pill">未処理：<strong id="pendingCount" class="mono">0</strong>枚</div>
-        <div class="pill">保存済み結果：<strong id="savedCount" class="mono">0</strong>件</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h3>検索（英字1文字）</h3>
+  <div class="card">
+    <h2>検索（英字1文字）</h2>
     <div class="row">
-      <input id="searchInput" type="text" maxlength="1" placeholder="例：B" />
-      <button id="searchBtn" class="btn secondary">検索</button>
-      <button id="csvBtn" class="btn secondary">CSV出力</button>
+      <input id="query" type="text" placeholder="例：B" maxlength="1" />
+      <button id="searchBtn">検索</button>
+      <button id="exportBtn" class="ghost">CSV出力</button>
     </div>
-    <div class="hint" style="margin-top:8px;">
-      結果は「英字の位置」と「近い数字(3桁)」を紐づけます（距離＋“数字が上”を少し優先）。
-    </div>
-  </div>
-
-  <div class="panel">
-    <h3>検出一覧（端末内に保存）</h3>
-    <div id="resultTitle" class="hint">まだ結果がありません。写真を追加してOCRしてください。</div>
-    <div style="overflow:auto; margin-top:8px;">
-      <table class="table" id="resultTable" style="display:none;">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Letter</th>
-            <th>Number</th>
-            <th>距離</th>
-            <th>信頼</th>
-            <th>画像</th>
-          </tr>
-        </thead>
-        <tbody id="resultBody"></tbody>
-      </table>
+    <div class="help" style="margin-top:8px">
+      結果は「英字の位置」と「近い数字(3桁)」を紐づけます（距離＋「上」を少し優先）。
     </div>
   </div>
 
-  <div class="panel">
-    <h3>デバッグログ</h3>
-    <div class="log" id="log"></div>
+  <div class="card">
+    <h2>検出一覧（端末内に保存）</h2>
+    <div id="resultWrap" class="mini">まだ結果がありません。写真を追加してOCRしてください。</div>
   </div>
 
-</div>
+  <div class="card">
+    <h2>デバッグログ</h2>
+    <div id="log" class="log"></div>
+  </div>
+</main>
 
+<!-- Tesseract.js -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 (() => {
-  // ====== Storage ======
-  const LS_KEY = "lnlinker_results_v4";
-  const LS_VER = 4;
+  const $ = (id) => document.getElementById(id);
 
-  // ====== UI refs ======
-  const fileInput = document.getElementById("fileInput");
-  const runBtn = document.getElementById("runBtn");
-  const clearBtn = document.getElementById("clearBtn");
-  const statusEl = document.getElementById("status");
-  const selectedName = document.getElementById("selectedName");
+  // UI
+  const camStartBtn = $("camStartBtn");
+  const camStopBtn  = $("camStopBtn");
+  const flipBtn     = $("flipBtn");
+  const snapOcrBtn  = $("snapOcrBtn");
 
-  const wButtons = [...document.querySelectorAll(".wbtn")];
-  const maxWLabel = document.getElementById("maxWLabel");
-  const binarizeEl = document.getElementById("binarize");
+  const fileInput   = $("fileInput");
+  const runFilesBtn = $("runFilesBtn");
+  const clearBtn    = $("clearBtn");
 
-  const photoCountEl = document.getElementById("photoCount");
-  const pendingCountEl = document.getElementById("pendingCount");
-  const savedCountEl = document.getElementById("savedCount");
+  const statusEl    = $("status");
+  const fpsEl       = $("fps");
+  const logEl       = $("log");
 
-  const searchInput = document.getElementById("searchInput");
-  const searchBtn = document.getElementById("searchBtn");
-  const csvBtn = document.getElementById("csvBtn");
+  const maxWLabel   = $("maxWLabel");
+  const binarizeEl  = $("binarize");
+  const preferAboveEl = $("preferAbove");
 
-  const resultTitle = document.getElementById("resultTitle");
-  const resultTable = document.getElementById("resultTable");
-  const resultBody = document.getElementById("resultBody");
+  const fileCountEl = $("fileCount");
+  const pendingCountEl = $("pendingCount");
+  const savedCountEl = $("savedCount");
 
-  const logEl = document.getElementById("log");
+  const queryEl     = $("query");
+  const searchBtn   = $("searchBtn");
+  const exportBtn   = $("exportBtn");
 
-  // Camera
-  const camStartBtn = document.getElementById("camStartBtn");
-  const camStopBtn = document.getElementById("camStopBtn");
-  const camFlipBtn = document.getElementById("camFlipBtn");
-  const camSnapBtn = document.getElementById("camSnapBtn");
-  const video = document.getElementById("video");
+  const video       = $("video");
+  const canvas      = $("work");
 
-  // ====== State ======
-  let maxW = 240;
-  let files = [];      // File[]
-  let pending = [];    // {file, id}[]
-  let results = loadResults(); // saved results
+  const w320 = $("w320"), w240 = $("w240"), w180 = $("w180");
 
-  // Camera state
+  // State
+  let maxW = 320;
+  let facing = "environment"; // or "user"
   let stream = null;
-  let facing = "environment"; // default back camera
 
-  // ====== Helpers ======
-  function log(msg) {
-    const t = new Date().toISOString().slice(11,19);
-    logEl.textContent += `[${t}] ${msg}\n`;
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-  function setStatus(text, cls="") {
-    statusEl.className = `status ${cls}`;
-    statusEl.textContent = text;
+  let selectedFiles = [];
+  let pendingFiles = [];
+
+  const STORAGE_KEY = "lnlinker_results_v2";
+  let saved = loadSaved(); // [{letter, number, distance, conf, image, time}]
+
+  // Worker
+  let worker = null;
+  let workerReady = false;
+
+  // ---------- Utils ----------
+  function log(msg, cls="") {
+    const t = new Date();
+    const hh = String(t.getHours()).padStart(2,"0");
+    const mm = String(t.getMinutes()).padStart(2,"0");
+    const ss = String(t.getSeconds()).padStart(2,"0");
+    const line = `[${hh}:${mm}:${ss}] ${msg}`;
+    const span = document.createElement("div");
+    if (cls) span.className = cls;
+    span.textContent = line;
+    logEl.prepend(span);
   }
 
-  function loadResults() {
+  function setStatus(s) {
+    statusEl.textContent = s;
+  }
+
+  function setMaxW(v) {
+    maxW = v;
+    maxWLabel.textContent = String(v);
+    [w320,w240,w180].forEach(b => b.classList.remove("active"));
+    if (v===320) w320.classList.add("active");
+    if (v===240) w240.classList.add("active");
+    if (v===180) w180.classList.add("active");
+  }
+
+  function loadSaved() {
     try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (!raw) return [];
-      const obj = JSON.parse(raw);
-      if (!obj || obj.ver !== LS_VER || !Array.isArray(obj.items)) return [];
-      return obj.items;
-    } catch { return []; }
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e) {
+      return [];
+    }
   }
-  function saveResults() {
-    localStorage.setItem(LS_KEY, JSON.stringify({ ver: LS_VER, items: results }));
-    savedCountEl.textContent = String(results.length);
-  }
-
-  function updateCounts() {
-    photoCountEl.textContent = String(files.length);
-    pendingCountEl.textContent = String(pending.length);
-    savedCountEl.textContent = String(results.length);
+  function persistSaved() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    savedCountEl.textContent = String(saved.length);
   }
 
-  function setMaxW(w) {
-    maxW = w;
-    maxWLabel.textContent = String(w);
-    wButtons.forEach(b => b.classList.toggle("active", Number(b.dataset.w) === w));
+  function renderSavedTable(list = saved) {
+    if (!list.length) {
+      $("resultWrap").innerHTML = `<div class="mini">まだ結果がありません。写真を追加してOCRしてください。</div>`;
+      return;
+    }
+    const rows = list.map((r, i) => `
+      <tr>
+        <td>${i+1}</td>
+        <td>${escapeHtml(r.letter)}</td>
+        <td>${escapeHtml(r.number)}</td>
+        <td>${Math.round(r.distance)}</td>
+        <td>${Math.round(r.conf||0)}</td>
+        <td>${escapeHtml(r.image||"")}</td>
+      </tr>
+    `).join("");
+    $("resultWrap").innerHTML = `
+      <table>
+        <thead>
+          <tr><th>#</th><th>Letter</th><th>Number</th><th>距離</th><th>信頼</th><th>画像</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
   }
 
-  // ====== OCR core ======
-  function clampInt(n, a, b){ return Math.max(a, Math.min(b, n)); }
-
-  function extract3DigitNumbers(text) {
-    const matches = text.match(/(?<!\d)\d{3}(?!\d)/g) || [];
-    return matches.filter(s => {
-      const n = Number(s);
-      return n >= 0 && n <= 410;
-    });
-  }
-
-  function extractSingleLetters(text) {
-    const m = text.match(/(?<![A-Z])[A-Z](?![A-Z])/g) || [];
-    return m;
-  }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
   function centerOfBBox(b) {
-    return { x: (b.x0 + b.x1)/2, y: (b.y0 + b.y1)/2 };
+    // b: {x0,y0,x1,y1}
+    const cx = (b.x0 + b.x1) / 2;
+    const cy = (b.y0 + b.y1) / 2;
+    return {cx, cy};
   }
 
-  function dist(a,b) {
-    const dx = a.x - b.x, dy = a.y - b.y;
+  function dist(a, b) {
+    const dx = a.cx - b.cx;
+    const dy = a.cy - b.cy;
     return Math.sqrt(dx*dx + dy*dy);
   }
 
-  function preferScore(letterPt, numPt) {
-    const d = dist(letterPt, numPt);
-    const aboveBonus = (numPt.y < letterPt.y) ? -0.25 * d : 0;
-    return d + aboveBonus;
+  // ---------- Image preprocess ----------
+  function drawToCanvas(imgOrVideo, outCanvas, maxWidth) {
+    const w0 = imgOrVideo.videoWidth || imgOrVideo.naturalWidth || imgOrVideo.width;
+    const h0 = imgOrVideo.videoHeight || imgOrVideo.naturalHeight || imgOrVideo.height;
+    const scale = Math.min(1, maxWidth / w0);
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
+    outCanvas.width = w;
+    outCanvas.height = h;
+    const ctx = outCanvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(imgOrVideo, 0, 0, w, h);
+    return { w, h };
   }
 
-  function resizeAndPreprocess(img, maxW, doBinarize) {
-    const scale = Math.min(1, maxW / img.width);
-    const w = Math.max(1, Math.round(img.width * scale));
-    const h = Math.max(1, Math.round(img.height * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext("2d", { willReadFrequently:true });
-    ctx.drawImage(img, 0, 0, w, h);
-
-    if (doBinarize) {
-      const imgData = ctx.getImageData(0,0,w,h);
-      const d = imgData.data;
-
-      let sum = 0;
-      const lum = new Uint8Array(w*h);
-      for (let i=0, j=0; i<d.length; i+=4, j++){
-        const y = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
-        lum[j] = y; sum += y;
-      }
-      const mean = sum / lum.length;
-      const th = clampInt(Math.round(mean + 10), 80, 200);
-
-      for (let i=0, j=0; i<d.length; i+=4, j++){
-        const v = lum[j] > th ? 255 : 0;
-        d[i]=d[i+1]=d[i+2]=v;
-        d[i+3]=255;
-      }
-      ctx.putImageData(imgData, 0, 0);
+  function applyBinarize(outCanvas) {
+    const ctx = outCanvas.getContext("2d", { willReadFrequently: true });
+    const img = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
+    const d = img.data;
+    // 簡易グレースケール + 大津っぽい固定閾値（軽量）
+    // 数字が消える場合はUIでOFFにできる
+    let sum = 0;
+    for (let i=0;i<d.length;i+=4){
+      const g = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
+      sum += g;
     }
-
-    return { canvas, w, h };
+    const mean = sum / (d.length/4);
+    const thr = mean * 0.92; // 少し暗め寄り
+    for (let i=0;i<d.length;i+=4){
+      const g = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
+      const v = (g > thr) ? 255 : 0;
+      d[i]=d[i+1]=d[i+2]=v;
+      d[i+3]=255;
+    }
+    ctx.putImageData(img,0,0);
   }
 
-  async function createWorkerSafe() {
-    const tessdataPath = "./tessdata";
-    const worker = await Tesseract.createWorker("eng", 1, {
-      logger: m => {
-        if (m && m.status === "recognizing text") {
-          setStatus(`recognizing ${Math.round((m.progress||0)*100)}%`, "warn");
+  // ---------- Tesseract worker ----------
+  async function ensureWorker() {
+    if (workerReady) return;
+    setStatus("loading OCR...");
+    log(`ready. tessdata path: ./tessdata/eng.traineddata.gz`, "ok");
+
+    const { createWorker } = Tesseract;
+
+    worker = await createWorker("eng", 1, {
+      // 重要：GitHub Pagesの /tessdata/ を使う
+      langPath: "./tessdata",
+      gzip: true,
+      logger: (m) => {
+        // m: { status, progress }
+        if (m && m.status) {
+          if (typeof m.progress === "number") {
+            fpsEl.textContent = `${Math.round(m.progress*100)}%`;
+          }
         }
-      },
-      langPath: tessdataPath,
+      }
     });
-    return worker;
+
+    // ベース設定（軽量化）
+    await worker.setParameters({
+      preserve_interword_spaces: "1"
+    });
+
+    workerReady = true;
+    setStatus("ready");
+    fpsEl.textContent = "";
   }
 
-  async function ocrWords(worker, canvas, mode) {
+  async function ocrWords(mode, sourceCanvas) {
+    // mode: "letters" or "numbers"
+    await ensureWorker();
+
     if (mode === "letters") {
       await worker.setParameters({
         tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        preserve_interword_spaces: "1",
+        tessedit_pageseg_mode: "8"
       });
     } else {
       await worker.setParameters({
         tessedit_char_whitelist: "0123456789",
-        preserve_interword_spaces: "1",
         tessedit_pageseg_mode: "8",
-        user_defined_dpi: "200",
+        user_defined_dpi: "200"
       });
     }
-    const { data } = await worker.recognize(canvas);
-    return (data && data.words) ? data.words : [];
+
+    const { data } = await worker.recognize(sourceCanvas);
+    const words = (data && data.words) ? data.words : [];
+    return words;
   }
 
-  function normalizeWordText(w) {
-    return String(w.text || "")
-      .replace(/\s+/g, "")
-      .toUpperCase()
-      .replace(/O/g, "0");
+  // ---------- Extract letters / numbers ----------
+  function extractLetters(words) {
+    // 1文字英大文字だけ
+    return words
+      .map(w => ({ text: (w.text||"").trim(), conf: w.confidence||0, bbox: w.bbox }))
+      .filter(w => /^[A-Z]$/.test(w.text));
   }
 
-  function buildPairs(letterWords, numberWords, imgName) {
-    const letters = [];
-    for (const w of letterWords) {
-      const t = normalizeWordText(w);
-      const one = extractSingleLetters(t);
-      if (one && one.length === 1) {
-        letters.push({ letter: one[0], bbox: w.bbox, conf: w.confidence ?? 0 });
-      }
-    }
+  function normalizeNumberText(raw) {
+    // 数字以外を除去→int→000〜410→3桁化
+    const digits = String(raw||"").replace(/\D/g,"");
+    if (!digits) return null;
+    const n = parseInt(digits, 10);
+    if (!Number.isFinite(n)) return null;
+    if (n < 0 || n > 410) return null;
+    return String(n).padStart(3, "0");
+  }
 
-    const nums = [];
-    for (const w of numberWords) {
-      const t = normalizeWordText(w);
-      const ms = extract3DigitNumbers(t);
-      if (!ms || ms.length === 0) continue;
-      for (const s of ms) {
-        nums.push({ num: s, bbox: w.bbox, conf: w.confidence ?? 0 });
-      }
-    }
+  function extractNumbers(words) {
+    return words
+      .map(w => {
+        const norm = normalizeNumberText((w.text||"").trim());
+        if (!norm) return null;
+        return { text: norm, conf: w.confidence||0, bbox: w.bbox };
+      })
+      .filter(Boolean);
+  }
 
+  function pairNearest(letters, numbers, preferAbove) {
+    // letters: [{text,bbox}], numbers: [{text,bbox}]
+    // returns pairs: [{letter, number, distance, conf}]
     const pairs = [];
-    for (const L of letters) {
-      const lp = centerOfBBox(L.bbox);
+
+    const numCenters = numbers.map(n => ({...n, ...centerOfBBox(n.bbox)}));
+
+    for (const l of letters) {
+      const lc = centerOfBBox(l.bbox);
       let best = null;
-
-      for (const N of nums) {
-        const np = centerOfBBox(N.bbox);
-        const score = preferScore(lp, np);
-        const d = dist(lp, np);
-        if (!best || score < best.score) best = { N, score, d };
+      for (const n of numCenters) {
+        const d0 = dist(lc, n);
+        let d = d0;
+        if (preferAbove && n.cy < lc.cy) d = d0 * 0.85; // 上の数字を少し優先
+        if (!best || d < best.d) best = { n, d, d0 };
       }
-
       if (best) {
         pairs.push({
-          letter: L.letter,
-          number: best.N.num,
-          dist: Math.round(best.d),
-          conf: Math.round((best.N.conf ?? 0) * 10) / 10,
-          image: imgName,
-          ts: Date.now(),
+          letter: l.text,
+          number: best.n.text,
+          distance: best.d0,
+          conf: Math.min(l.conf||0, best.n.conf||0)
         });
       }
     }
-    return { lettersCount: letters.length, numsCount: nums.length, pairs };
+    return pairs;
   }
 
-  async function processOne(file, labelName) {
-    const name = labelName || file.name || `image_${Date.now()}`;
-    log(`--- ${name} ---`);
+  // ---------- Run OCR for image/camera ----------
+  async function runOCRFromCanvas(srcCanvas, imageName="(camera)") {
+    const bin = !!binarizeEl.checked;
+    const preferAbove = !!preferAboveEl.checked;
 
-    const url = URL.createObjectURL(file);
+    // 1) 既に縮小済みキャンバスが来る想定だが、念のため
+    if (bin) applyBinarize(srcCanvas);
+
+    setStatus("recognizing...");
+    // letters / numbers を別々に取る（numbers=0でも落とさない）
+    const letterWords = await ocrWords("letters", srcCanvas);
+    const numberWords = await ocrWords("numbers", srcCanvas);
+
+    const letters = extractLetters(letterWords);
+    const numbers = extractNumbers(numberWords);
+
+    log(`letters=${letters.length}, numbers=${numbers.length}`, letters.length && numbers.length ? "ok" : "warn");
+
+    const pairs = pairNearest(letters, numbers, preferAbove);
+    log(`pairs=${pairs.length}  (image=${imageName})`, pairs.length ? "ok" : "warn");
+
+    // 保存（pairsだけ保存）
+    const now = new Date().toISOString();
+    for (const p of pairs) {
+      saved.push({ ...p, image: imageName, time: now });
+    }
+    persistSaved();
+    renderSavedTable();
+
+    setStatus("ready");
+  }
+
+  async function runOCRFromImageFile(file) {
     const img = new Image();
     img.decoding = "async";
-    img.src = url;
-
+    const url = URL.createObjectURL(file);
     await new Promise((res, rej) => {
-      img.onload = () => res();
-      img.onerror = () => rej(new Error("画像読み込み失敗"));
+      img.onload = res;
+      img.onerror = rej;
+      img.src = url;
     });
 
-    const { canvas, w, h } = resizeAndPreprocess(img, maxW, binarizeEl.checked);
-    URL.revokeObjectURL(url);
-    log(`canvas ${w}x${h} (maxW=${maxW}) binarize=${binarizeEl.checked}`);
+    const { w, h } = drawToCanvas(img, canvas, maxW);
+    log(`--- ${file.name} ---`);
+    log(`canvas ${w}x${h} (maxW=${maxW})`);
+    log(`binarize=${!!binarizeEl.checked}`);
 
-    setStatus("creating worker...", "warn");
-    const worker = await createWorkerSafe();
+    await runOCRFromCanvas(canvas, file.name);
 
-    try {
-      setStatus("OCR letters...", "warn");
-      const letterWords = await ocrWords(worker, canvas, "letters");
-
-      setStatus("OCR numbers...", "warn");
-      const numberWords = await ocrWords(worker, canvas, "numbers");
-
-      const built = buildPairs(letterWords, numberWords, name);
-      log(`letters=${built.lettersCount}, numbers=${built.numsCount}, pairs=${built.pairs.length}`);
-
-      const map = new Map(results.map(r => [`${r.image}__${r.letter}`, r]));
-      for (const p of built.pairs) map.set(`${p.image}__${p.letter}`, p);
-
-      results = Array.from(map.values()).sort((a,b) => b.ts - a.ts);
-      saveResults();
-      renderTable(results, null);
-
-      setStatus("done ✅", "ok");
-    } finally {
-      await worker.terminate();
-    }
-  }
-
-  // ====== Table & Search ======
-  function renderTable(list, titleText) {
-    if (!list || list.length === 0) {
-      resultTitle.textContent = titleText || "まだ結果がありません。写真を追加してOCRしてください。";
-      resultTable.style.display = "none";
-      resultBody.innerHTML = "";
-      return;
-    }
-    resultTitle.textContent = titleText || `保存済み結果：${list.length}件`;
-    resultTable.style.display = "";
-    resultBody.innerHTML = "";
-
-    list.slice(0, 300).forEach((r, idx) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="mono">${idx+1}</td>
-        <td class="mono">${r.letter}</td>
-        <td class="mono">${r.number}</td>
-        <td class="mono">${r.dist ?? ""}</td>
-        <td class="mono">${r.conf ?? ""}</td>
-        <td class="mono">${escapeHtml(r.image || "")}</td>
-      `;
-      resultBody.appendChild(tr);
-    });
-  }
-
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, c => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    }[c]));
-  }
-
-  function doSearch() {
-    const q = (searchInput.value || "").toUpperCase().trim();
-    const letter = q.slice(0,1);
-    if (!letter.match(/^[A-Z]$/)) {
-      renderTable(results, "検索は英字1文字（A〜Z）で入力してください。");
-      return;
-    }
-    const filtered = results.filter(r => r.letter === letter);
-    renderTable(filtered, `検索結果：${letter}（${filtered.length}件）`);
-  }
-
-  function toCSV(rows) {
-    const header = ["letter","number","dist","conf","image","ts"];
-    const lines = [header.join(",")];
-    for (const r of rows) {
-      const line = [
-        r.letter,
-        r.number,
-        r.dist ?? "",
-        r.conf ?? "",
-        `"${String(r.image||"").replace(/"/g,'""')}"`,
-        r.ts ?? ""
-      ].join(",");
-      lines.push(line);
-    }
-    return lines.join("\n");
-  }
-
-  function downloadCSV() {
-    const csv = toCSV(results);
-    const blob = new Blob([csv], { type:"text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "letter-number-results.csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
     URL.revokeObjectURL(url);
   }
 
-  // ====== Camera ======
+  // ---------- Camera ----------
   async function startCamera() {
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("このブラウザはカメラAPIに対応していません。");
-        return;
-      }
+      await ensureWorker(); // 先にOCR準備（ユーザー操作直後なので許可も通りやすい）
 
-      setStatus("starting camera...", "warn");
-
-      // stop existing
-      stopCamera();
-
-      const constraints = {
-        audio: false,
-        video: {
-          facingMode: { ideal: facing },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      };
-
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (stream) stopCamera();
+      setStatus("starting camera...");
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
       video.srcObject = stream;
       await video.play();
 
+      camStartBtn.disabled = true;
       camStopBtn.disabled = false;
-      camFlipBtn.disabled = false;
-      camSnapBtn.disabled = false;
+      flipBtn.disabled = false;
+      snapOcrBtn.disabled = false;
 
-      setStatus("camera ready", "ok");
-      log(`camera started (facing=${facing})`);
+      setStatus(`camera started (${facing})`);
+      log(`camera started (facing=${facing})`, "ok");
     } catch (e) {
-      console.error(e);
-      log(`CAM ERROR: ${e && e.message ? e.message : String(e)}`);
-      setStatus("camera error", "err");
-      alert("カメラが開始できませんでした。\nURLバー左の設定でカメラを「許可」にしてください。");
+      setStatus("camera error");
+      log(`camera error: ${e && e.message ? e.message : e}`, "err");
     }
   }
 
   function stopCamera() {
-    if (stream) {
-      for (const tr of stream.getTracks()) tr.stop();
-      stream = null;
-    }
-    video.pause();
+    if (!stream) return;
+    for (const tr of stream.getTracks()) tr.stop();
+    stream = null;
     video.srcObject = null;
 
+    camStartBtn.disabled = false;
     camStopBtn.disabled = true;
-    camFlipBtn.disabled = true;
-    camSnapBtn.disabled = true;
+    flipBtn.disabled = true;
+    snapOcrBtn.disabled = true;
 
-    setStatus("idle");
-    log("camera stopped");
+    setStatus("camera stopped");
+    log(`camera stopped`, "warn");
   }
 
   async function flipCamera() {
     facing = (facing === "environment") ? "user" : "environment";
+    log(`flip -> ${facing}`, "ok");
     await startCamera();
   }
 
   async function snapAndOCR() {
-    if (!stream) return;
+    if (!video || !video.videoWidth) return;
+    const { w, h } = drawToCanvas(video, canvas, maxW);
+    log(`--- CAM_${new Date().toISOString().replace(/[:.]/g,"").slice(0,15)}.jpg ---`);
+    log(`canvas ${w}x${h} (maxW=${maxW})`);
+    log(`binarize=${!!binarizeEl.checked}`);
 
+    await runOCRFromCanvas(canvas, "camera");
+  }
+
+  // ---------- Search / Export ----------
+  function doSearch() {
+    const q = (queryEl.value || "").trim().toUpperCase();
+    if (!/^[A-Z]$/.test(q)) {
+      renderSavedTable(saved);
+      return;
+    }
+    const filtered = saved.filter(r => r.letter === q);
+    renderSavedTable(filtered);
+  }
+
+  function exportCSV() {
+    const header = ["time","image","letter","number","distance","conf"];
+    const lines = [header.join(",")];
+    for (const r of saved) {
+      lines.push([
+        r.time || "",
+        r.image || "",
+        r.letter || "",
+        r.number || "",
+        String(r.distance ?? ""),
+        String(r.conf ?? "")
+      ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type:"text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "letter-number-results.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  // ---------- File queue ----------
+  function updateFileCounts() {
+    fileCountEl.textContent = String(selectedFiles.length);
+    pendingCountEl.textContent = String(pendingFiles.length);
+  }
+
+  async function runFilesQueue() {
+    if (!pendingFiles.length) {
+      log("no pending files.", "warn");
+      return;
+    }
+    runFilesBtn.disabled = true;
     try {
-      setStatus("capturing...", "warn");
-
-      // Capture current video frame to canvas
-      const vw = video.videoWidth || 1280;
-      const vh = video.videoHeight || 720;
-
-      const cap = document.createElement("canvas");
-      cap.width = vw; cap.height = vh;
-      const ctx = cap.getContext("2d");
-      ctx.drawImage(video, 0, 0, vw, vh);
-
-      // Convert to blob -> File
-      const blob = await new Promise(res => cap.toBlob(res, "image/jpeg", 0.92));
-      if (!blob) throw new Error("capture failed");
-
-      const ts = new Date();
-      const fname = `CAM_${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}_${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}${String(ts.getSeconds()).padStart(2,'0')}.jpg`;
-      const file = new File([blob], fname, { type:"image/jpeg" });
-
-      // OCR directly (1回)
-      await processOne(file, fname);
-
-    } catch (e) {
-      console.error(e);
-      log(`SNAP/OCR ERROR: ${e && e.message ? e.message : String(e)}`);
-      setStatus("ERROR", "err");
-      alert("OCRでエラーが出ました。縮小幅を240→180にして再試行してください。");
+      while (pendingFiles.length) {
+        const f = pendingFiles.shift();
+        updateFileCounts();
+        await runOCRFromImageFile(f);
+        // iPhone安定用：少し待つ
+        await new Promise(r => setTimeout(r, 250));
+      }
+    } finally {
+      runFilesBtn.disabled = false;
+      updateFileCounts();
     }
   }
 
-  // ====== Upload flow ======
-  wButtons.forEach(b => b.addEventListener("click", () => setMaxW(Number(b.dataset.w))));
-  setMaxW(240);
+  // ---------- Events ----------
+  w320.onclick = () => setMaxW(320);
+  w240.onclick = () => setMaxW(240);
+  w180.onclick = () => setMaxW(180);
 
-  fileInput.addEventListener("change", () => {
-    files = Array.from(fileInput.files || []);
-    pending = files.map((f, i) => ({ file: f, id: `${Date.now()}_${i}` }));
-    selectedName.textContent = files.length ? files[0].name + (files.length>1 ? ` (+${files.length-1})` : "") : "未選択";
-    runBtn.disabled = pending.length === 0;
-    updateCounts();
-    log(`selected files: ${files.length}`);
-    setStatus(files.length ? "ready(upload)" : "idle", files.length ? "ok" : "");
-  });
+  camStartBtn.onclick = startCamera;
+  camStopBtn.onclick = stopCamera;
+  flipBtn.onclick = flipCamera;
+  snapOcrBtn.onclick = snapAndOCR;
 
-  runBtn.addEventListener("click", async () => {
-    runBtn.disabled = true;
-    try {
-      while (pending.length > 0) {
-        updateCounts();
-        const item = pending.shift();
-        updateCounts();
-        try {
-          await processOne(item.file, item.file.name);
-        } catch (e) {
-          console.error(e);
-          log(`ERROR: ${e && e.message ? e.message : String(e)}`);
-          setStatus("ERROR: failed", "err");
-          break;
-        }
-      }
-    } finally {
-      runBtn.disabled = pending.length === 0;
-      updateCounts();
-    }
-  });
+  fileInput.onchange = () => {
+    const files = Array.from(fileInput.files || []);
+    selectedFiles = files;
+    pendingFiles = files.slice();
+    updateFileCounts();
+    log(`selected files: ${files.length}`, "ok");
+  };
 
-  clearBtn.addEventListener("click", () => {
-    if (!confirm("端末内の保存結果をすべて削除します。よろしいですか？")) return;
-    results = [];
-    saveResults();
-    renderTable(results);
-    log("cleared all saved results");
-    setStatus("cleared", "ok");
-    updateCounts();
-  });
+  runFilesBtn.onclick = runFilesQueue;
 
-  searchBtn.addEventListener("click", doSearch);
-  searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
-  csvBtn.addEventListener("click", downloadCSV);
+  clearBtn.onclick = () => {
+    selectedFiles = [];
+    pendingFiles = [];
+    fileInput.value = "";
+    saved = [];
+    persistSaved();
+    renderSavedTable();
+    updateFileCounts();
+    log("cleared all.", "warn");
+  };
 
-  // Camera events
-  camStartBtn.addEventListener("click", startCamera);
-  camStopBtn.addEventListener("click", stopCamera);
-  camFlipBtn.addEventListener("click", flipCamera);
-  camSnapBtn.addEventListener("click", snapAndOCR);
+  searchBtn.onclick = doSearch;
+  queryEl.addEventListener("input", doSearch);
+  exportBtn.onclick = exportCSV;
 
-  // init
-  renderTable(results);
-  updateCounts();
+  // Init
+  setMaxW(320);
+  persistSaved();
+  renderSavedTable();
+  updateFileCounts();
   setStatus("idle");
-  log("ready. tessdata path: ./tessdata/eng.traineddata.gz");
+  log("open ok.", "ok");
+
 })();
 </script>
 </body>
