@@ -1,446 +1,596 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Letter-Number Linker (iPhone Static OCR)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Letter-Number Linker (Static OCR)</title>
 
-  <!-- tesseract.js v2系 -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
+  <!-- Tesseract.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <style>
-    :root { --bg:#061006; --fg:#d8ffd8; --card:#072507; --accent:#1fb56a; --muted:#9ad39a; }
-    body{ margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system; }
-    header{ position:sticky; top:0; z-index:10; background:#063b1b; padding:10px 12px; border-bottom:1px solid #0b5; }
-    .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    button,input[type="text"]{ border-radius:12px; border:1px solid #0b5; background:#0b2; color:#fff; padding:10px 12px; font-weight:700; }
-    button:disabled{ opacity:.5; }
-    .ghost{ background:transparent; color:var(--fg); }
-    .wrap{ padding:12px; }
-    .card{ background:var(--card); border:1px solid #0a4; border-radius:14px; padding:12px; margin:10px 0; }
-    .muted{ color:var(--muted); font-size:13px; line-height:1.35; }
-    .mono{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
-    #status{ font-weight:900; margin-top:6px; }
-    #thumbs{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
-    .thumb{ border:1px solid #0a4; border-radius:12px; overflow:hidden; background:#001a00; }
-    .thumb img{ width:100%; height:100px; object-fit:cover; display:block; }
-    .thumb .meta{ padding:6px 8px; font-size:12px; color:#bff; }
-    table{ width:100%; border-collapse:collapse; font-size:14px; }
-    th,td{ border-bottom:1px solid #0a4; padding:8px; text-align:left; }
-    .chip{ display:inline-block; padding:2px 8px; border:1px solid #0a4; border-radius:999px; margin:2px; }
-    textarea{ width:100%; height:120px; background:#001800; color:#bff; border:1px solid #0a4; border-radius:12px; padding:10px; }
-    .danger{ color:#ffb3b3; }
+    :root{
+      --bg:#062b16;
+      --panel:#0b3a1f;
+      --panel2:#0a2f19;
+      --border:#0e6d3b;
+      --text:#d5ffe7;
+      --muted:#9fe7c0;
+      --btn:#1c8b4f;
+      --btn2:#146d3d;
+      --danger:#a13b3b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    body{ margin:0; background:var(--bg); color:var(--text); font-family:-apple-system, system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;}
+    .wrap{ max-width:900px; margin:0 auto; padding:12px 12px 24px;}
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+    .panel{ background:var(--panel); border:2px solid var(--border); border-radius:14px; padding:12px; margin-top:12px;}
+    .panel h3{ margin:0 0 8px; font-size:18px;}
+    .hint{ color:var(--muted); font-size:13px; line-height:1.45; }
+    .btn{ background:var(--btn); color:#fff; border:0; padding:10px 14px; border-radius:12px; font-weight:700; cursor:pointer; }
+    .btn:disabled{ opacity:.5; cursor:not-allowed;}
+    .btn.secondary{ background:var(--btn2); }
+    .btn.danger{ background:var(--danger); }
+    .pill{ display:inline-flex; gap:8px; align-items:center; border:2px solid var(--border); border-radius:999px; padding:6px 10px; background:var(--panel2); }
+    .pill strong{ font-family:var(--mono); }
+    .wbtn{ background:transparent; color:var(--text); border:2px solid var(--border); border-radius:12px; padding:8px 12px; font-weight:800; cursor:pointer;}
+    .wbtn.active{ background:var(--btn2); }
+    input[type="text"]{
+      background:var(--panel2);
+      border:2px solid var(--border);
+      border-radius:12px;
+      color:var(--text);
+      padding:10px 12px;
+      font-size:16px;
+      outline:none;
+      width:min(420px, 100%);
+    }
+    .filebox{
+      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+      border:2px solid var(--border); border-radius:14px; padding:10px; background:var(--panel2);
+    }
+    .filebox input[type="file"]{ display:none; }
+    .filelabel{
+      background:var(--btn2); color:#fff; padding:10px 12px; border-radius:12px; font-weight:800; cursor:pointer;
+    }
+    .table{ width:100%; border-collapse:collapse; font-size:14px;}
+    .table th, .table td{ border-bottom:1px solid rgba(14,109,59,.45); padding:10px 8px; text-align:left; }
+    .table th{ color:#bfffdc; font-weight:800;}
+    .mono{ font-family:var(--mono); }
+    .log{
+      background:#041a0d; border:2px solid var(--border); border-radius:14px; padding:10px;
+      font-family:var(--mono); font-size:12px; white-space:pre-wrap; max-height:240px; overflow:auto;
+      color:#b7ffd7;
+    }
+    .status{
+      font-family:var(--mono); font-weight:900; font-size:14px;
+    }
+    .status.ok{ color:#7dffb1;}
+    .status.warn{ color:#ffd27d;}
+    .status.err{ color:#ff7d7d;}
   </style>
 </head>
-
 <body>
-<header>
-  <div class="row">
-    <label class="ghost" style="display:inline-flex;align-items:center;gap:8px;">
-      <span style="font-weight:800;">写真を追加</span>
-      <input id="file" type="file" accept="image/*" multiple style="color:var(--fg); background:transparent; border:none; padding:0;" />
-    </label>
-    <button id="btnProcess" disabled>OCR実行（1枚ずつ）</button>
-    <button id="btnClear" class="ghost">全削除</button>
-  </div>
-
-  <div class="row" style="margin-top:8px;">
-    <span class="mono">縮小幅(px):</span>
-    <button id="w320" class="ghost">320</button>
-    <button id="w240" class="ghost">240</button>
-    <button id="w180" class="ghost">180</button>
-    <span class="mono" id="wNow">=320</span>
-  </div>
-
-  <div id="status" class="mono">idle</div>
-</header>
-
 <div class="wrap">
-  <div class="card">
-    <div class="muted">
-      使い方：①写真を複数選ぶ → ②「OCR実行」→ ③下の検索でアルファベットを入力<br>
-      ※ iPhone Safari はOCRが落ちやすいので、まずは <b>縮小幅 240〜180</b> を推奨。
-    </div>
-  </div>
 
-  <div class="card">
+  <div class="panel">
     <div class="row" style="justify-content:space-between;">
-      <div style="font-weight:900;">読み込んだ写真</div>
-      <div class="muted" id="count">0枚</div>
+      <div class="row">
+        <div class="filebox">
+          <div style="font-weight:900;">写真を追加</div>
+          <label class="filelabel" for="fileInput">ファイルを選択</label>
+          <input id="fileInput" type="file" accept="image/*" multiple />
+          <div class="pill"><span class="mono" id="selectedName">未選択</span></div>
+        </div>
+
+        <button id="runBtn" class="btn" disabled>OCR実行（1枚ずつ）</button>
+        <button id="clearBtn" class="btn danger">全削除</button>
+      </div>
+
+      <div class="pill">
+        <span class="status" id="status">idle</span>
+      </div>
     </div>
-    <div id="thumbs" style="margin-top:10px;"></div>
+
+    <div class="panel" style="margin-top:12px;">
+      <div class="row" style="justify-content:space-between;">
+        <div class="row">
+          <div style="font-weight:900;">縮小幅(px)：</div>
+          <button class="wbtn" data-w="320">320</button>
+          <button class="wbtn" data-w="240">240</button>
+          <button class="wbtn" data-w="180">180</button>
+          <div class="pill">=<strong id="maxWLabel" class="mono">240</strong></div>
+        </div>
+        <div class="row">
+          <label class="pill" style="cursor:pointer;">
+            <input id="binarize" type="checkbox" style="transform:scale(1.2); margin-right:8px;" checked />
+            二値化（おすすめ）
+          </label>
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:10px;">
+        使い方：①写真を複数選ぶ → ②「OCR実行」 → ③下の検索で英字1文字を入力<br/>
+        ※ 数字は <b>必ず3桁（000〜410）</b>として扱います。2桁は捨てます。<br/>
+        ※ iPhone Safari が落ちる場合は、縮小幅を <b>240→180</b> にしてください（Chrome推奨）。
+      </div>
+
+      <div class="row" style="margin-top:10px; gap:16px;">
+        <div class="pill">読み込んだ写真：<strong id="photoCount" class="mono">0</strong>枚</div>
+        <div class="pill">未処理：<strong id="pendingCount" class="mono">0</strong>枚</div>
+        <div class="pill">保存済み結果：<strong id="savedCount" class="mono">0</strong>件</div>
+      </div>
+    </div>
   </div>
 
-  <div class="card">
-    <div style="font-weight:900;">検索（英字1文字）</div>
-    <div class="row" style="margin-top:8px;">
-      <input id="q" type="text" maxlength="1" placeholder="例: W" style="flex:1; background:#003000; border:1px solid #0a4;" />
-      <button id="btnFind">検索</button>
-      <button id="btnExport" class="ghost">CSV出力</button>
+  <div class="panel">
+    <h3>検索（英字1文字）</h3>
+    <div class="row">
+      <input id="searchInput" type="text" maxlength="1" placeholder="例：B" />
+      <button id="searchBtn" class="btn secondary">検索</button>
+      <button id="csvBtn" class="btn secondary">CSV出力</button>
     </div>
-    <div class="muted" style="margin-top:6px;">
-      結果は「英字の位置」と「近い数字（2〜4桁）」を紐づけます（画像内の距離で判定）。
+    <div class="hint" style="margin-top:8px;">
+      結果は「英字の位置」と「近い数字(3桁)」を紐づけます（画像内の距離＋“数字が上”を優先）。
     </div>
   </div>
 
-  <div class="card">
-    <div style="font-weight:900;">検出一覧（端末内に保存）</div>
-    <div id="resultArea" style="margin-top:8px;"></div>
+  <div class="panel">
+    <h3>検出一覧（端末内に保存）</h3>
+    <div id="resultTitle" class="hint">まだ結果がありません。写真を追加してOCRしてください。</div>
+    <div style="overflow:auto; margin-top:8px;">
+      <table class="table" id="resultTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Letter</th>
+            <th>Number</th>
+            <th>距離</th>
+            <th>信頼</th>
+            <th>画像</th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
   </div>
 
-  <div class="card">
-    <div style="font-weight:900;">デバッグログ</div>
-    <textarea id="log" class="mono" readonly></textarea>
+  <div class="panel">
+    <h3>デバッグログ</h3>
+    <div class="log" id="log"></div>
   </div>
+
 </div>
 
 <script>
-/** ==========
- *  永続化: localStorage（軽量。画像は保存せず、結果だけ保存）
- *  ※画像も保持したい場合はIndexedDBが必要。まずは「結果保持」で安定優先。
- * ========== */
-const STORE_KEY = "ln_ocr_records_v1";
+(() => {
+  // ====== Storage ======
+  const LS_KEY = "lnlinker_results_v3";
+  const LS_VER = 3;
 
-function loadRecords(){
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch { return []; }
-}
-function saveRecords(recs){
-  localStorage.setItem(STORE_KEY, JSON.stringify(recs));
-}
-let records = loadRecords(); // {id, name, ts, pairs:[{letter,number,dist,conf}] , rawText?}
+  // ====== UI refs ======
+  const fileInput = document.getElementById("fileInput");
+  const runBtn = document.getElementById("runBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const statusEl = document.getElementById("status");
+  const selectedName = document.getElementById("selectedName");
 
-const $ = (id)=>document.getElementById(id);
-const file = $("file");
-const btnProcess = $("btnProcess");
-const btnClear = $("btnClear");
-const btnFind = $("btnFind");
-const btnExport = $("btnExport");
-const thumbs = $("thumbs");
-const statusEl = $("status");
-const logEl = $("log");
-const countEl = $("count");
-const resultArea = $("resultArea");
-const wNow = $("wNow");
+  const wButtons = [...document.querySelectorAll(".wbtn")];
+  const maxWLabel = document.getElementById("maxWLabel");
+  const binarizeEl = document.getElementById("binarize");
 
-let filesQueue = []; // File[]
-let maxW = 320;
+  const photoCountEl = document.getElementById("photoCount");
+  const pendingCountEl = document.getElementById("pendingCount");
+  const savedCountEl = document.getElementById("savedCount");
 
-function log(s){
-  logEl.value = (logEl.value + "\n" + s).trim();
-  logEl.scrollTop = logEl.scrollHeight;
-}
-function setStatus(s){ statusEl.textContent = s; }
+  const searchInput = document.getElementById("searchInput");
+  const searchBtn = document.getElementById("searchBtn");
+  const csvBtn = document.getElementById("csvBtn");
 
-function uid(){
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
+  const resultTitle = document.getElementById("resultTitle");
+  const resultTable = document.getElementById("resultTable");
+  const resultBody = document.getElementById("resultBody");
 
-/** ==========
- *  画像→Canvas（縮小）
- * ========== */
-async function fileToCanvas(f, maxWidth){
-  const img = await new Promise((res, rej)=>{
-    const i = new Image();
-    i.onload = ()=>res(i);
-    i.onerror = rej;
-    i.src = URL.createObjectURL(f);
-  });
+  const logEl = document.getElementById("log");
 
-  const scale = Math.min(1, maxWidth / img.width);
-  const w = Math.max(2, Math.round(img.width * scale));
-  const h = Math.max(2, Math.round(img.height * scale));
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const ctx = c.getContext("2d", { willReadFrequently:true });
-  ctx.drawImage(img, 0, 0, w, h);
-  return { canvas:c, w, h };
-}
+  // ====== State ======
+  let maxW = 240;
+  let files = [];      // File[]
+  let pending = [];    // {file, id}[]
+  let results = loadResults(); // saved results
 
-/** ==========
- *  OCR（iPhone向け）: ASMコア指定
- *  - 失敗しやすいので、1枚ずつ・小さい画像推奨
- * ========== */
-async function recognizeCanvas(canvas){
-  const base = location.origin + location.pathname.replace(/\/?$/, "/");
-  const langPath = base + "tessdata";
+  // ====== Helpers ======
+  function log(msg) {
+    const t = new Date().toISOString().slice(11,19);
+    logEl.textContent += `[${t}] ${msg}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setStatus(text, cls="") {
+    statusEl.className = `status ${cls}`;
+    statusEl.textContent = text;
+  }
 
-  const res = await Tesseract.recognize(canvas, "eng", {
-    workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js",
-    corePath:   "https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.asm.js",
-    langPath:   langPath,
+  function loadResults() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return [];
+      const obj = JSON.parse(raw);
+      if (!obj || obj.ver !== LS_VER || !Array.isArray(obj.items)) return [];
+      return obj.items;
+    } catch { return []; }
+  }
+  function saveResults() {
+    localStorage.setItem(LS_KEY, JSON.stringify({ ver: LS_VER, items: results }));
+    savedCountEl.textContent = String(results.length);
+  }
 
-    // 英字+数字に絞って負荷を下げる
-    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-    // 文字が散らばっている前提
-    tessedit_pageseg_mode: 11, // sparse text
-    user_defined_dpi: 150,
+  function updateCounts() {
+    photoCountEl.textContent = String(files.length);
+    pendingCountEl.textContent = String(pending.length);
+    savedCountEl.textContent = String(results.length);
+  }
 
-    logger: m => {
-      if (m?.status) {
-        const pct = (m.progress!=null) ? ` ${Math.round(m.progress*100)}%` : "";
-        setStatus(m.status + pct);
+  function setMaxW(w) {
+    maxW = w;
+    maxWLabel.textContent = String(w);
+    wButtons.forEach(b => b.classList.toggle("active", Number(b.dataset.w) === w));
+  }
+
+  // ====== OCR core ======
+  function clampInt(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+  function extract3DigitNumbers(text) {
+    const matches = text.match(/(?<!\d)\d{3}(?!\d)/g) || [];
+    return matches.filter(s => {
+      const n = Number(s);
+      return n >= 0 && n <= 410;
+    });
+  }
+
+  function extractSingleLetters(text) {
+    // A-Z 1文字だけ（周囲が英字でない）
+    const m = text.match(/(?<![A-Z])[A-Z](?![A-Z])/g) || [];
+    return m;
+  }
+
+  function centerOfBBox(b) {
+    // tesseract bbox: { x0,y0,x1,y1 }
+    return { x: (b.x0 + b.x1)/2, y: (b.y0 + b.y1)/2 };
+  }
+
+  function dist(a,b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  function preferScore(letterPt, numPt) {
+    // “数字が上”を優先：数字のyが小さいほど加点（=スコアを下げる）
+    const d = dist(letterPt, numPt);
+    const aboveBonus = (numPt.y < letterPt.y) ? -0.20 * d : 0; // 上なら少し優遇
+    return d + aboveBonus;
+  }
+
+  function resizeAndPreprocess(img, maxW, doBinarize) {
+    const scale = Math.min(1, maxW / img.width);
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently:true });
+    ctx.drawImage(img, 0, 0, w, h);
+
+    if (doBinarize) {
+      const imgData = ctx.getImageData(0,0,w,h);
+      const d = imgData.data;
+
+      // grayscale + simple threshold (Otsuは重いので固定寄り)
+      // まず輝度を作りながら平均を取って閾値推定
+      let sum = 0;
+      const lum = new Uint8Array(w*h);
+      for (let i=0, j=0; i<d.length; i+=4, j++){
+        const y = (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114) | 0;
+        lum[j] = y; sum += y;
+      }
+      const mean = sum / lum.length;
+      // 牌が白/背景が暗い前提で少し高めに
+      const th = clampInt(Math.round(mean + 10), 80, 200);
+
+      for (let i=0, j=0; i<d.length; i+=4, j++){
+        const v = lum[j] > th ? 255 : 0;
+        d[i]=d[i+1]=d[i+2]=v;
+        d[i+3]=255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    return { canvas, w, h };
+  }
+
+  async function createWorkerSafe() {
+    // tessdata は repo の /tessdata/ に置いている想定
+    // 例: https://xxxxx.github.io/letter-number-app/tessdata/eng.traineddata.gz
+    const tessdataPath = "./tessdata";
+
+    // tesseract.js v5
+    const worker = await Tesseract.createWorker("eng", 1, {
+      logger: m => {
+        if (m && m.status) {
+          if (m.status === "recognizing text") {
+            setStatus(`recognizing ${Math.round((m.progress||0)*100)}%`, "warn");
+          }
+        }
+      },
+      langPath: tessdataPath,
+      // corePath を固定しない（CDN版の標準を使う）
+    });
+
+    return worker;
+  }
+
+  async function ocrWords(worker, canvas, mode) {
+    // mode: "letters" | "numbers"
+    if (mode === "letters") {
+      await worker.setParameters({
+        tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        preserve_interword_spaces: "1",
+      });
+    } else {
+      await worker.setParameters({
+        tessedit_char_whitelist: "0123456789",
+        preserve_interword_spaces: "1",
+      });
+    }
+
+    const { data } = await worker.recognize(canvas);
+    return (data && data.words) ? data.words : [];
+  }
+
+  function normalizeWordText(w) {
+    return String(w.text || "")
+      .replace(/\s+/g, "")
+      .toUpperCase()
+      // よくある誤読対策（必要なら増やせます）
+      .replace(/O/g, "0");
+  }
+
+  function buildPairs(letterWords, numberWords, imgName) {
+    // letters: 1文字だけ
+    const letters = [];
+    for (const w of letterWords) {
+      const t = normalizeWordText(w);
+      const one = extractSingleLetters(t);
+      if (!one || one.length === 0) continue;
+      // words の中に2文字入ってる場合があるので、単一文字だけ採用
+      // bboxは同一にする（簡易）
+      if (one.length === 1) {
+        letters.push({ letter: one[0], bbox: w.bbox, conf: w.confidence ?? 0 });
       }
     }
+
+    // numbers: 3桁だけ + 000〜410
+    const nums = [];
+    for (const w of numberWords) {
+      const t = normalizeWordText(w);
+      const ms = extract3DigitNumbers(t);
+      if (!ms || ms.length === 0) continue;
+      for (const s of ms) {
+        nums.push({ num: s, bbox: w.bbox, conf: w.confidence ?? 0 });
+      }
+    }
+
+    const pairs = [];
+    for (const L of letters) {
+      const lp = centerOfBBox(L.bbox);
+      let best = null;
+
+      for (const N of nums) {
+        const np = centerOfBBox(N.bbox);
+        const score = preferScore(lp, np);
+        const d = dist(lp, np);
+        if (!best || score < best.score) {
+          best = { N, score, d };
+        }
+      }
+
+      if (best) {
+        pairs.push({
+          letter: L.letter,
+          number: best.N.num,            // "032"などゼロ保持
+          dist: Math.round(best.d),
+          conf: Math.round((best.N.conf ?? 0) * 10) / 10,
+          image: imgName,
+          ts: Date.now(),
+        });
+      }
+    }
+
+    return { lettersCount: letters.length, numsCount: nums.length, pairs };
+  }
+
+  async function processOne(file) {
+    const name = file.name || `image_${Date.now()}`;
+    log(`--- ${name} ---`);
+
+    // read image
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+
+    await new Promise((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error("画像読み込み失敗"));
+    });
+
+    const { canvas, w, h } = resizeAndPreprocess(img, maxW, binarizeEl.checked);
+    URL.revokeObjectURL(url);
+    log(`canvas ${w}x${h} (maxW=${maxW}) binarize=${binarizeEl.checked}`);
+
+    // worker (create each time to reduce Safari crash; Chromeでも安定)
+    setStatus("creating worker...", "warn");
+    const worker = await createWorkerSafe();
+
+    try {
+      setStatus("OCR letters...", "warn");
+      const letterWords = await ocrWords(worker, canvas, "letters");
+
+      setStatus("OCR numbers...", "warn");
+      const numberWords = await ocrWords(worker, canvas, "numbers");
+
+      const built = buildPairs(letterWords, numberWords, name);
+      log(`letters=${built.lettersCount}, numbers=${built.numsCount}, pairs=${built.pairs.length}`);
+
+      // save results (append; avoid duplicates by (image, letter) last-win)
+      const map = new Map(results.map(r => [`${r.image}__${r.letter}`, r]));
+      for (const p of built.pairs) {
+        map.set(`${p.image}__${p.letter}`, p);
+      }
+      results = Array.from(map.values()).sort((a,b) => b.ts - a.ts);
+      saveResults();
+      renderTable(results, null);
+
+      setStatus("done ✅", "ok");
+    } finally {
+      await worker.terminate();
+    }
+  }
+
+  // ====== Table & Search ======
+  function renderTable(list, titleText) {
+    if (!list || list.length === 0) {
+      resultTitle.textContent = titleText || "まだ結果がありません。写真を追加してOCRしてください。";
+      resultTable.style.display = "none";
+      resultBody.innerHTML = "";
+      return;
+    }
+    resultTitle.textContent = titleText || `保存済み結果：${list.length}件`;
+    resultTable.style.display = "";
+    resultBody.innerHTML = "";
+
+    list.slice(0, 200).forEach((r, idx) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="mono">${idx+1}</td>
+        <td class="mono">${r.letter}</td>
+        <td class="mono">${r.number}</td>
+        <td class="mono">${r.dist ?? ""}</td>
+        <td class="mono">${r.conf ?? ""}</td>
+        <td class="mono">${escapeHtml(r.image || "")}</td>
+      `;
+      resultBody.appendChild(tr);
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[c]));
+  }
+
+  function doSearch() {
+    const q = (searchInput.value || "").toUpperCase().trim();
+    const letter = q.slice(0,1);
+    if (!letter.match(/^[A-Z]$/)) {
+      renderTable(results, "検索は英字1文字（A〜Z）で入力してください。");
+      return;
+    }
+    const filtered = results.filter(r => r.letter === letter);
+    renderTable(filtered, `検索結果：${letter}（${filtered.length}件）`);
+  }
+
+  function toCSV(rows) {
+    const header = ["letter","number","dist","conf","image","ts"];
+    const lines = [header.join(",")];
+    for (const r of rows) {
+      const line = [
+        r.letter,
+        r.number,
+        r.dist ?? "",
+        r.conf ?? "",
+        `"${String(r.image||"").replace(/"/g,'""')}"`,
+        r.ts ?? ""
+      ].join(",");
+      lines.push(line);
+    }
+    return lines.join("\n");
+  }
+
+  function downloadCSV() {
+    const csv = toCSV(results);
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "letter-number-results.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ====== Events ======
+  wButtons.forEach(b => {
+    b.addEventListener("click", () => setMaxW(Number(b.dataset.w)));
+  });
+  setMaxW(240);
+
+  fileInput.addEventListener("change", () => {
+    files = Array.from(fileInput.files || []);
+    pending = files.map((f, i) => ({ file: f, id: `${Date.now()}_${i}` }));
+    selectedName.textContent = files.length ? files[0].name + (files.length>1 ? ` (+${files.length-1})` : "") : "未選択";
+    runBtn.disabled = pending.length === 0;
+    updateCounts();
+    log(`selected files: ${files.length}`);
+    setStatus(files.length ? "ready" : "idle");
   });
 
-  return res;
-}
-
-/** ==========
- *  位置情報で「英字」と「近い数字(2-4桁)」を紐づけ
- *  tesseract.js v2: res.data.words に bbox/conf/text が入る
- * ========== */
-function centerOfBBox(b){
-  const x = (b.x0 + b.x1)/2;
-  const y = (b.y0 + b.y1)/2;
-  return {x,y};
-}
-function dist(a,b){
-  const dx=a.x-b.x, dy=a.y-b.y;
-  return Math.sqrt(dx*dx+dy*dy);
-}
-function extractPairs(res){
-  const words = (res?.data?.words || [])
-    .map(w => ({
-      text: (w.text || "").trim(),
-      conf: (w.confidence != null ? w.confidence : w.conf) ?? 0,
-      bbox: w.bbox
-    }))
-    .filter(w => w.text);
-
-  // 英字1文字
-  const letters = words.filter(w => /^[A-Z]$/.test(w.text));
-  // 数字 2〜4桁（ゼロ埋めもOK）
-  const nums = words.filter(w => /^\d{2,4}$/.test(w.text));
-
-  const pairs = [];
-
-  for (const L of letters){
-    const lc = centerOfBBox(L.bbox);
-    let best = null;
-    for (const N of nums){
-      const nc = centerOfBBox(N.bbox);
-      const d = dist(lc, nc);
-      if (!best || d < best.d) best = { N, d };
+  runBtn.addEventListener("click", async () => {
+    runBtn.disabled = true;
+    try {
+      // 1枚ずつ確実に
+      while (pending.length > 0) {
+        updateCounts();
+        const item = pending.shift();
+        updateCounts();
+        try {
+          await processOne(item.file);
+        } catch (e) {
+          console.error(e);
+          log(`ERROR: ${e && e.message ? e.message : String(e)}`);
+          setStatus("ERROR: abort/failed", "err");
+          // ここで止める（端末保護）
+          break;
+        }
+      }
+    } finally {
+      runBtn.disabled = pending.length === 0;
+      updateCounts();
     }
-    if (best){
-      pairs.push({
-        letter: L.text,
-        number: best.N.text,
-        dist: Math.round(best.d),
-        conf: Math.round((Math.min(L.conf, best.N.conf) || 0))
-      });
-    }
-  }
+  });
 
-  // 同じ letter が複数ある場合は dist 小さい順
-  pairs.sort((a,b)=> a.letter.localeCompare(b.letter) || a.dist-b.dist);
-  return pairs;
-}
+  clearBtn.addEventListener("click", () => {
+    if (!confirm("端末内の保存結果をすべて削除します。よろしいですか？")) return;
+    results = [];
+    saveResults();
+    renderTable(results);
+    log("cleared all saved results");
+    setStatus("cleared", "ok");
+    updateCounts();
+  });
 
-/** ==========
- *  UI
- * ========== */
-function renderThumbs(){
-  thumbs.innerHTML = "";
-  countEl.textContent = `${filesQueue.length}枚（未処理） / 保存済み結果 ${records.length}件`;
+  searchBtn.addEventListener("click", doSearch);
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doSearch();
+  });
+  csvBtn.addEventListener("click", downloadCSV);
 
-  for (const f of filesQueue){
-    const div = document.createElement("div");
-    div.className = "thumb";
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(f);
-    const meta = document.createElement("div");
-    meta.className = "meta mono";
-    meta.textContent = f.name;
-    div.appendChild(img);
-    div.appendChild(meta);
-    thumbs.appendChild(div);
-  }
-}
-
-function renderResults(pairs, title){
-  const wrap = document.createElement("div");
-  wrap.className = "card";
-  wrap.innerHTML = `<div style="font-weight:900;">${title}</div>`;
-
-  if (!pairs.length){
-    wrap.innerHTML += `<div class="danger" style="margin-top:8px;">見つかりませんでした（縮小幅を180にして再挑戦推奨）</div>`;
-    return wrap;
-  }
-
-  const tbl = document.createElement("table");
-  tbl.innerHTML = `
-    <thead>
-      <tr><th>Letter</th><th>Number</th><th>距離</th><th>信頼</th></tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tb = tbl.querySelector("tbody");
-  for (const p of pairs){
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td><span class="chip mono">${p.letter}</span></td>
-                    <td class="mono">${p.number}</td>
-                    <td class="mono">${p.dist}</td>
-                    <td class="mono">${p.conf}</td>`;
-    tb.appendChild(tr);
-  }
-  wrap.appendChild(tbl);
-  return wrap;
-}
-
-function showAllRecords(){
-  resultArea.innerHTML = "";
-  if (!records.length){
-    resultArea.innerHTML = `<div class="muted">まだ結果がありません。写真を追加してOCRしてください。</div>`;
-    return;
-  }
-  // 直近10件を表示
-  const recent = records.slice(-10).reverse();
-  for (const r of recent){
-    const title = `${new Date(r.ts).toLocaleString()} / ${r.name}`;
-    resultArea.appendChild(renderResults(r.pairs || [], title));
-  }
-}
-
-/** ==========
- *  イベント
- * ========== */
-file.addEventListener("change", () => {
-  const arr = Array.from(file.files || []);
-  filesQueue.push(...arr);
-  btnProcess.disabled = filesQueue.length === 0;
-  renderThumbs();
-});
-
-$("w320").onclick = ()=>{ maxW=320; wNow.textContent="=320"; };
-$("w240").onclick = ()=>{ maxW=240; wNow.textContent="=240"; };
-$("w180").onclick = ()=>{ maxW=180; wNow.textContent="=180"; };
-
-btnClear.onclick = () => {
-  if (!confirm("保存済み結果も含めて全削除しますか？")) return;
-  filesQueue = [];
-  records = [];
-  saveRecords(records);
-  btnProcess.disabled = true;
-  renderThumbs();
-  showAllRecords();
-  setStatus("cleared");
-  log("cleared");
-};
-
-btnProcess.onclick = async () => {
-  if (!filesQueue.length) return;
-  btnProcess.disabled = true;
-  setStatus("starting... (1 by 1)");
-  logEl.value = "";
-
-  while (filesQueue.length){
-    const f = filesQueue.shift();
-    try{
-      log(`--- ${f.name} ---`);
-      setStatus(`loading image: ${f.name}`);
-      const { canvas, w, h } = await fileToCanvas(f, maxW);
-      log(`canvas ${w}x${h} (maxW=${maxW})`);
-
-      setStatus(`OCR: ${f.name}`);
-      const res = await recognizeCanvas(canvas);
-
-      const pairs = extractPairs(res);
-      log(`pairs: ${pairs.length}`);
-      log(`text: ${(res?.data?.text||"").trim().slice(0,200)}`);
-
-      records.push({
-        id: uid(),
-        name: f.name,
-        ts: Date.now(),
-        pairs
-      });
-      saveRecords(records);
-
-      showAllRecords();
-    }catch(e){
-      console.error(e);
-      const msg = (e?.message || String(e));
-      log(`ERROR: ${msg}`);
-      setStatus(`ERROR（縮小幅を180にして再挑戦推奨）`);
-      // 失敗しても続行（次のファイルへ）
-    }
-    renderThumbs();
-  }
-
-  setStatus("done ✅");
-  btnProcess.disabled = filesQueue.length === 0;
-};
-
-btnFind.onclick = () => {
-  const q = ($("q").value || "").trim().toUpperCase();
-  if (!/^[A-Z]$/.test(q)){
-    alert("A〜Z の1文字を入れてください");
-    return;
-  }
-  const hits = [];
-  for (const r of records){
-    for (const p of (r.pairs||[])){
-      if (p.letter === q) hits.push({ ...p, name:r.name, ts:r.ts });
-    }
-  }
-  // 近い順→信頼度順
-  hits.sort((a,b)=> a.dist-b.dist || b.conf-a.conf);
-
-  resultArea.innerHTML = "";
-  const title = `検索結果: ${q}（${hits.length}件）`;
-  const wrap = document.createElement("div");
-  wrap.className = "card";
-  wrap.innerHTML = `<div style="font-weight:900;">${title}</div>`;
-
-  if (!hits.length){
-    wrap.innerHTML += `<div class="muted" style="margin-top:8px;">該当なし</div>`;
-    resultArea.appendChild(wrap);
-    return;
-  }
-
-  const tbl = document.createElement("table");
-  tbl.innerHTML = `
-    <thead><tr><th>Number</th><th>距離</th><th>信頼</th><th>画像</th></tr></thead>
-    <tbody></tbody>
-  `;
-  const tb = tbl.querySelector("tbody");
-  for (const h of hits.slice(0, 50)){
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td class="mono">${h.number}</td>
-                    <td class="mono">${h.dist}</td>
-                    <td class="mono">${h.conf}</td>
-                    <td class="mono">${h.name}</td>`;
-    tb.appendChild(tr);
-  }
-  wrap.appendChild(tbl);
-  resultArea.appendChild(wrap);
-};
-
-btnExport.onclick = () => {
-  if (!records.length){ alert("結果がありません"); return; }
-  const rows = [["timestamp","image","letter","number","dist","conf"]];
-  for (const r of records){
-    for (const p of (r.pairs||[])){
-      rows.push([new Date(r.ts).toISOString(), r.name, p.letter, p.number, p.dist, p.conf]);
-    }
-  }
-  const csv = rows.map(r => r.map(x => `"${String(x).replaceAll('"','""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], {type:"text/csv"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "letter-number.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-// 初期表示
-renderThumbs();
-showAllRecords();
-setStatus("ready (add photos)");
+  // init
+  renderTable(results);
+  updateCounts();
+  setStatus("idle");
+  log("ready. tessdata path: ./tessdata/eng.traineddata.gz");
+})();
 </script>
-
 </body>
 </html>
