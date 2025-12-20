@@ -3,145 +3,444 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Letter-Number OCR (Single Shot / iPhone Stable)</title>
+  <title>Letter-Number Linker (iPhone Static OCR)</title>
 
-  <!-- tesseract.js v2系（iOSで比較的安定） -->
+  <!-- tesseract.js v2系 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
 
   <style>
-    :root { --bg:#061006; --fg:#c7f7c7; --accent:#2a7; }
-    body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system; }
-    header { position:sticky; top:0; z-index:10; background:#073; padding:10px; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    button { padding:10px 12px; border:0; border-radius:10px; background:#1b5; color:#fff; font-weight:700; }
-    button:disabled { opacity:.5; }
-    #status { margin-top:8px; font-weight:900; }
-    video { width:100%; max-height:58vh; object-fit:contain; background:#000; }
-    .wrap { padding:10px; }
-    textarea { width:100%; height:180px; background:#001800; color:#bff; border:1px solid #0a4; border-radius:10px; padding:10px; }
-    .hint { opacity:.9; font-size:13px; margin-top:6px; line-height:1.35; }
-    .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+    :root { --bg:#061006; --fg:#d8ffd8; --card:#072507; --accent:#1fb56a; --muted:#9ad39a; }
+    body{ margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,-apple-system; }
+    header{ position:sticky; top:0; z-index:10; background:#063b1b; padding:10px 12px; border-bottom:1px solid #0b5; }
+    .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    button,input[type="text"]{ border-radius:12px; border:1px solid #0b5; background:#0b2; color:#fff; padding:10px 12px; font-weight:700; }
+    button:disabled{ opacity:.5; }
+    .ghost{ background:transparent; color:var(--fg); }
+    .wrap{ padding:12px; }
+    .card{ background:var(--card); border:1px solid #0a4; border-radius:14px; padding:12px; margin:10px 0; }
+    .muted{ color:var(--muted); font-size:13px; line-height:1.35; }
+    .mono{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #status{ font-weight:900; margin-top:6px; }
+    #thumbs{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+    .thumb{ border:1px solid #0a4; border-radius:12px; overflow:hidden; background:#001a00; }
+    .thumb img{ width:100%; height:100px; object-fit:cover; display:block; }
+    .thumb .meta{ padding:6px 8px; font-size:12px; color:#bff; }
+    table{ width:100%; border-collapse:collapse; font-size:14px; }
+    th,td{ border-bottom:1px solid #0a4; padding:8px; text-align:left; }
+    .chip{ display:inline-block; padding:2px 8px; border:1px solid #0a4; border-radius:999px; margin:2px; }
+    textarea{ width:100%; height:120px; background:#001800; color:#bff; border:1px solid #0a4; border-radius:12px; padding:10px; }
+    .danger{ color:#ffb3b3; }
   </style>
 </head>
 
 <body>
 <header>
   <div class="row">
-    <button id="btnCam">カメラ開始</button>
-    <button id="btnFlip">外/内 切替</button>
-    <button id="btnShot" disabled>1回OCR</button>
+    <label class="ghost" style="display:inline-flex;align-items:center;gap:8px;">
+      <span style="font-weight:800;">写真を追加</span>
+      <input id="file" type="file" accept="image/*" multiple style="color:var(--fg); background:transparent; border:none; padding:0;" />
+    </label>
+    <button id="btnProcess" disabled>OCR実行（1枚ずつ）</button>
+    <button id="btnClear" class="ghost">全削除</button>
   </div>
+
+  <div class="row" style="margin-top:8px;">
+    <span class="mono">縮小幅(px):</span>
+    <button id="w320" class="ghost">320</button>
+    <button id="w240" class="ghost">240</button>
+    <button id="w180" class="ghost">180</button>
+    <span class="mono" id="wNow">=320</span>
+  </div>
+
   <div id="status" class="mono">idle</div>
 </header>
 
-<video id="video" autoplay playsinline muted></video>
-
 <div class="wrap">
-  <div class="hint">
-    ①「カメラ開始」→ ② 牌を<strong>2〜3枚だけ</strong>大きく映す → ③「1回OCR」<br>
-    iPhone Safariで落ちやすいWASMを避けるため、ASMコアを強制しています。
+  <div class="card">
+    <div class="muted">
+      使い方：①写真を複数選ぶ → ②「OCR実行」→ ③下の検索でアルファベットを入力<br>
+      ※ iPhone Safari はOCRが落ちやすいので、まずは <b>縮小幅 240〜180</b> を推奨。
+    </div>
   </div>
 
-  <h3>認識テキスト</h3>
-  <textarea id="out" class="mono" readonly></textarea>
+  <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div style="font-weight:900;">読み込んだ写真</div>
+      <div class="muted" id="count">0枚</div>
+    </div>
+    <div id="thumbs" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:900;">検索（英字1文字）</div>
+    <div class="row" style="margin-top:8px;">
+      <input id="q" type="text" maxlength="1" placeholder="例: W" style="flex:1; background:#003000; border:1px solid #0a4;" />
+      <button id="btnFind">検索</button>
+      <button id="btnExport" class="ghost">CSV出力</button>
+    </div>
+    <div class="muted" style="margin-top:6px;">
+      結果は「英字の位置」と「近い数字（2〜4桁）」を紐づけます（画像内の距離で判定）。
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:900;">検出一覧（端末内に保存）</div>
+    <div id="resultArea" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:900;">デバッグログ</div>
+    <textarea id="log" class="mono" readonly></textarea>
+  </div>
 </div>
 
 <script>
-const video = document.getElementById('video');
-const statusEl = document.getElementById('status');
-const outEl = document.getElementById('out');
+/** ==========
+ *  永続化: localStorage（軽量。画像は保存せず、結果だけ保存）
+ *  ※画像も保持したい場合はIndexedDBが必要。まずは「結果保持」で安定優先。
+ * ========== */
+const STORE_KEY = "ln_ocr_records_v1";
 
-const btnCam  = document.getElementById('btnCam');
-const btnFlip = document.getElementById('btnFlip');
-const btnShot = document.getElementById('btnShot');
+function loadRecords(){
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch { return []; }
+}
+function saveRecords(recs){
+  localStorage.setItem(STORE_KEY, JSON.stringify(recs));
+}
+let records = loadRecords(); // {id, name, ts, pairs:[{letter,number,dist,conf}] , rawText?}
 
-let stream = null;
-let facing = "environment"; // 外カメラ優先
+const $ = (id)=>document.getElementById(id);
+const file = $("file");
+const btnProcess = $("btnProcess");
+const btnClear = $("btnClear");
+const btnFind = $("btnFind");
+const btnExport = $("btnExport");
+const thumbs = $("thumbs");
+const statusEl = $("status");
+const logEl = $("log");
+const countEl = $("count");
+const resultArea = $("resultArea");
+const wNow = $("wNow");
 
+let filesQueue = []; // File[]
+let maxW = 320;
+
+function log(s){
+  logEl.value = (logEl.value + "\n" + s).trim();
+  logEl.scrollTop = logEl.scrollHeight;
+}
 function setStatus(s){ statusEl.textContent = s; }
 
-async function startCamera(){
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  setStatus("starting camera...");
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: { ideal: facing },
-      width:  { ideal: 640 },
-      height: { ideal: 480 }
-    },
-    audio:false
+function uid(){
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/** ==========
+ *  画像→Canvas（縮小）
+ * ========== */
+async function fileToCanvas(f, maxWidth){
+  const img = await new Promise((res, rej)=>{
+    const i = new Image();
+    i.onload = ()=>res(i);
+    i.onerror = rej;
+    i.src = URL.createObjectURL(f);
   });
-  video.srcObject = stream;
-  await video.play();
-  btnShot.disabled = false;
-  setStatus("camera ready");
+
+  const scale = Math.min(1, maxWidth / img.width);
+  const w = Math.max(2, Math.round(img.width * scale));
+  const h = Math.max(2, Math.round(img.height * scale));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently:true });
+  ctx.drawImage(img, 0, 0, w, h);
+  return { canvas:c, w, h };
 }
 
-// videoフレームを縮小してcanvasに（iPhoneのメモリ落ち対策）
-function captureToCanvas(maxW=480){
-  const c = document.createElement('canvas');
-  const vw = video.videoWidth || 640;
-  const vh = video.videoHeight || 480;
-  const scale = Math.min(1, maxW / vw);
-  c.width  = Math.max(2, Math.round(vw * scale));
-  c.height = Math.max(2, Math.round(vh * scale));
-  const ctx = c.getContext('2d', { willReadFrequently:true });
-  ctx.drawImage(video, 0, 0, c.width, c.height);
-  return c;
-}
+/** ==========
+ *  OCR（iPhone向け）: ASMコア指定
+ *  - 失敗しやすいので、1枚ずつ・小さい画像推奨
+ * ========== */
+async function recognizeCanvas(canvas){
+  const base = location.origin + location.pathname.replace(/\/?$/, "/");
+  const langPath = base + "tessdata";
 
-btnCam.onclick = startCamera;
+  const res = await Tesseract.recognize(canvas, "eng", {
+    workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js",
+    corePath:   "https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.asm.js",
+    langPath:   langPath,
 
-btnFlip.onclick = async () => {
-  facing = (facing === "environment") ? "user" : "environment";
-  await startCamera();
-};
+    // 英字+数字に絞って負荷を下げる
+    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    // 文字が散らばっている前提
+    tessedit_pageseg_mode: 11, // sparse text
+    user_defined_dpi: 150,
 
-btnShot.onclick = async () => {
-  try{
-    btnShot.disabled = true;
-    outEl.value = "";
-    setStatus("capturing...");
-    const canvas = captureToCanvas(480);
-
-    // GitHub Pages 上の tessdata を絶対URLで指定
-    const base = location.origin + location.pathname.replace(/\/?$/, "/");
-    const langPath = base + "tessdata";
-
-    setStatus("recognizing...");
-
-    const res = await Tesseract.recognize(
-      canvas,
-      "eng",
-      {
-        // ★重要：iPhone Safari対策（WASMではなくASMコアを使う）
-        workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js",
-        corePath:   "https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.asm.js",
-        langPath:   langPath,
-
-        // 認識対象を絞って安定化
-        tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-
-        logger: m => {
-          if (m && m.status) {
-            const pct = (m.progress != null) ? ` ${Math.round(m.progress*100)}%` : "";
-            setStatus(m.status + pct);
-          }
-        }
+    logger: m => {
+      if (m?.status) {
+        const pct = (m.progress!=null) ? ` ${Math.round(m.progress*100)}%` : "";
+        setStatus(m.status + pct);
       }
-    );
+    }
+  });
 
-    const text = (res?.data?.text || "").trim();
-    outEl.value = text || "(no text)";
-    setStatus("done ✅");
+  return res;
+}
 
-  }catch(e){
-    console.error(e);
-    setStatus("ERROR: " + (e?.message || e));
-  }finally{
-    btnShot.disabled = false;
+/** ==========
+ *  位置情報で「英字」と「近い数字(2-4桁)」を紐づけ
+ *  tesseract.js v2: res.data.words に bbox/conf/text が入る
+ * ========== */
+function centerOfBBox(b){
+  const x = (b.x0 + b.x1)/2;
+  const y = (b.y0 + b.y1)/2;
+  return {x,y};
+}
+function dist(a,b){
+  const dx=a.x-b.x, dy=a.y-b.y;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function extractPairs(res){
+  const words = (res?.data?.words || [])
+    .map(w => ({
+      text: (w.text || "").trim(),
+      conf: (w.confidence != null ? w.confidence : w.conf) ?? 0,
+      bbox: w.bbox
+    }))
+    .filter(w => w.text);
+
+  // 英字1文字
+  const letters = words.filter(w => /^[A-Z]$/.test(w.text));
+  // 数字 2〜4桁（ゼロ埋めもOK）
+  const nums = words.filter(w => /^\d{2,4}$/.test(w.text));
+
+  const pairs = [];
+
+  for (const L of letters){
+    const lc = centerOfBBox(L.bbox);
+    let best = null;
+    for (const N of nums){
+      const nc = centerOfBBox(N.bbox);
+      const d = dist(lc, nc);
+      if (!best || d < best.d) best = { N, d };
+    }
+    if (best){
+      pairs.push({
+        letter: L.text,
+        number: best.N.text,
+        dist: Math.round(best.d),
+        conf: Math.round((Math.min(L.conf, best.N.conf) || 0))
+      });
+    }
   }
+
+  // 同じ letter が複数ある場合は dist 小さい順
+  pairs.sort((a,b)=> a.letter.localeCompare(b.letter) || a.dist-b.dist);
+  return pairs;
+}
+
+/** ==========
+ *  UI
+ * ========== */
+function renderThumbs(){
+  thumbs.innerHTML = "";
+  countEl.textContent = `${filesQueue.length}枚（未処理） / 保存済み結果 ${records.length}件`;
+
+  for (const f of filesQueue){
+    const div = document.createElement("div");
+    div.className = "thumb";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(f);
+    const meta = document.createElement("div");
+    meta.className = "meta mono";
+    meta.textContent = f.name;
+    div.appendChild(img);
+    div.appendChild(meta);
+    thumbs.appendChild(div);
+  }
+}
+
+function renderResults(pairs, title){
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `<div style="font-weight:900;">${title}</div>`;
+
+  if (!pairs.length){
+    wrap.innerHTML += `<div class="danger" style="margin-top:8px;">見つかりませんでした（縮小幅を180にして再挑戦推奨）</div>`;
+    return wrap;
+  }
+
+  const tbl = document.createElement("table");
+  tbl.innerHTML = `
+    <thead>
+      <tr><th>Letter</th><th>Number</th><th>距離</th><th>信頼</th></tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tb = tbl.querySelector("tbody");
+  for (const p of pairs){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><span class="chip mono">${p.letter}</span></td>
+                    <td class="mono">${p.number}</td>
+                    <td class="mono">${p.dist}</td>
+                    <td class="mono">${p.conf}</td>`;
+    tb.appendChild(tr);
+  }
+  wrap.appendChild(tbl);
+  return wrap;
+}
+
+function showAllRecords(){
+  resultArea.innerHTML = "";
+  if (!records.length){
+    resultArea.innerHTML = `<div class="muted">まだ結果がありません。写真を追加してOCRしてください。</div>`;
+    return;
+  }
+  // 直近10件を表示
+  const recent = records.slice(-10).reverse();
+  for (const r of recent){
+    const title = `${new Date(r.ts).toLocaleString()} / ${r.name}`;
+    resultArea.appendChild(renderResults(r.pairs || [], title));
+  }
+}
+
+/** ==========
+ *  イベント
+ * ========== */
+file.addEventListener("change", () => {
+  const arr = Array.from(file.files || []);
+  filesQueue.push(...arr);
+  btnProcess.disabled = filesQueue.length === 0;
+  renderThumbs();
+});
+
+$("w320").onclick = ()=>{ maxW=320; wNow.textContent="=320"; };
+$("w240").onclick = ()=>{ maxW=240; wNow.textContent="=240"; };
+$("w180").onclick = ()=>{ maxW=180; wNow.textContent="=180"; };
+
+btnClear.onclick = () => {
+  if (!confirm("保存済み結果も含めて全削除しますか？")) return;
+  filesQueue = [];
+  records = [];
+  saveRecords(records);
+  btnProcess.disabled = true;
+  renderThumbs();
+  showAllRecords();
+  setStatus("cleared");
+  log("cleared");
 };
+
+btnProcess.onclick = async () => {
+  if (!filesQueue.length) return;
+  btnProcess.disabled = true;
+  setStatus("starting... (1 by 1)");
+  logEl.value = "";
+
+  while (filesQueue.length){
+    const f = filesQueue.shift();
+    try{
+      log(`--- ${f.name} ---`);
+      setStatus(`loading image: ${f.name}`);
+      const { canvas, w, h } = await fileToCanvas(f, maxW);
+      log(`canvas ${w}x${h} (maxW=${maxW})`);
+
+      setStatus(`OCR: ${f.name}`);
+      const res = await recognizeCanvas(canvas);
+
+      const pairs = extractPairs(res);
+      log(`pairs: ${pairs.length}`);
+      log(`text: ${(res?.data?.text||"").trim().slice(0,200)}`);
+
+      records.push({
+        id: uid(),
+        name: f.name,
+        ts: Date.now(),
+        pairs
+      });
+      saveRecords(records);
+
+      showAllRecords();
+    }catch(e){
+      console.error(e);
+      const msg = (e?.message || String(e));
+      log(`ERROR: ${msg}`);
+      setStatus(`ERROR（縮小幅を180にして再挑戦推奨）`);
+      // 失敗しても続行（次のファイルへ）
+    }
+    renderThumbs();
+  }
+
+  setStatus("done ✅");
+  btnProcess.disabled = filesQueue.length === 0;
+};
+
+btnFind.onclick = () => {
+  const q = ($("q").value || "").trim().toUpperCase();
+  if (!/^[A-Z]$/.test(q)){
+    alert("A〜Z の1文字を入れてください");
+    return;
+  }
+  const hits = [];
+  for (const r of records){
+    for (const p of (r.pairs||[])){
+      if (p.letter === q) hits.push({ ...p, name:r.name, ts:r.ts });
+    }
+  }
+  // 近い順→信頼度順
+  hits.sort((a,b)=> a.dist-b.dist || b.conf-a.conf);
+
+  resultArea.innerHTML = "";
+  const title = `検索結果: ${q}（${hits.length}件）`;
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = `<div style="font-weight:900;">${title}</div>`;
+
+  if (!hits.length){
+    wrap.innerHTML += `<div class="muted" style="margin-top:8px;">該当なし</div>`;
+    resultArea.appendChild(wrap);
+    return;
+  }
+
+  const tbl = document.createElement("table");
+  tbl.innerHTML = `
+    <thead><tr><th>Number</th><th>距離</th><th>信頼</th><th>画像</th></tr></thead>
+    <tbody></tbody>
+  `;
+  const tb = tbl.querySelector("tbody");
+  for (const h of hits.slice(0, 50)){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="mono">${h.number}</td>
+                    <td class="mono">${h.dist}</td>
+                    <td class="mono">${h.conf}</td>
+                    <td class="mono">${h.name}</td>`;
+    tb.appendChild(tr);
+  }
+  wrap.appendChild(tbl);
+  resultArea.appendChild(wrap);
+};
+
+btnExport.onclick = () => {
+  if (!records.length){ alert("結果がありません"); return; }
+  const rows = [["timestamp","image","letter","number","dist","conf"]];
+  for (const r of records){
+    for (const p of (r.pairs||[])){
+      rows.push([new Date(r.ts).toISOString(), r.name, p.letter, p.number, p.dist, p.conf]);
+    }
+  }
+  const csv = rows.map(r => r.map(x => `"${String(x).replaceAll('"','""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "letter-number.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+// 初期表示
+renderThumbs();
+showAllRecords();
+setStatus("ready (add photos)");
 </script>
+
 </body>
 </html>
