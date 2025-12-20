@@ -3,90 +3,113 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Letter Number OCR</title>
-
+<title>OCR Debug</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
 <style>
-body {
-  margin: 0;
-  background: #000;
-  color: #0f0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont;
-}
-#video {
-  width: 100%;
-  max-height: 60vh;
-  object-fit: contain;
-}
-button {
-  margin: 6px;
-  padding: 10px;
-}
-#status {
-  padding: 8px;
-}
+  body{margin:0;background:#000;color:#0f0;font-family:system-ui}
+  #video{width:100%;max-height:60vh;object-fit:contain;background:#111}
+  button{margin:6px;padding:10px}
+  #status{padding:8px;font-weight:700}
+  pre{white-space:pre-wrap;word-break:break-word;padding:10px;margin:0;color:#9f9}
 </style>
 </head>
-
 <body>
-
-<div>
-  <button id="start">Start</button>
-  <button id="flip">Flip</button>
-</div>
-
-<div id="status">idle</div>
-
-<video id="video" autoplay playsinline></video>
+  <div>
+    <button id="start">Start</button>
+    <button id="flip">Flip</button>
+  </div>
+  <div id="status">idle</div>
+  <video id="video" autoplay playsinline muted></video>
+  <pre id="log"></pre>
 
 <script>
 const video = document.getElementById('video');
 const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+
 let stream = null;
 let facing = "environment";
+let worker = null;
 
-async function startCamera() {
-  if (stream) {
-    stream.getTracks().forEach(t => t.stop());
-  }
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: facing }
-  });
-  video.srcObject = stream;
+function log(s){
+  logEl.textContent = (logEl.textContent + "\n" + s).trim();
 }
 
-document.getElementById('start').onclick = async () => {
-  statusEl.textContent = 'loading OCR...';
-
-  await startCamera();
-
-  const worker = await Tesseract.createWorker({
-    langPath: 'tessdata',
-    logger: m => {
-      if (m.progress !== undefined) {
-        statusEl.textContent =
-          `${m.status} ${Math.round(m.progress * 100)}%`;
-      }
-    }
+async function startCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: facing }, width:{ideal:640}, height:{ideal:480} },
+    audio: false
   });
+  video.srcObject = stream;
+  await video.play();
+}
 
-  await worker.loadLanguage('eng');
-  await worker.initialize('eng');
+async function checkFetch(url){
+  try{
+    const r = await fetch(url, { cache: "no-store" });
+    log(`fetch ${url} -> ${r.status}`);
+    return r.ok;
+  }catch(e){
+    log(`fetch error ${url} -> ${e}`);
+    return false;
+  }
+}
 
-  statusEl.textContent = 'OCR running';
-
-  setInterval(async () => {
-    const { data } = await worker.recognize(video);
-    console.log(data.text);
-  }, 3000);
+document.getElementById('flip').onclick = async () => {
+  facing = facing === "environment" ? "user" : "environment";
+  await startCamera();
 };
 
-document.getElementById('flip').onclick = () => {
-  facing = facing === "environment" ? "user" : "environment";
-  startCamera();
+document.getElementById('start').onclick = async () => {
+  try{
+    statusEl.textContent = "starting camera...";
+    logEl.textContent = "";
+    await startCamera();
+
+    // ★重要：tessdata を「絶対URL」に固定（GitHub Pages対策）
+    const base = location.origin + location.pathname.replace(/\/?$/, "/"); // 末尾を必ず /
+    const langBase = base + "tessdata";
+    const trained = langBase + "/eng.traineddata.gz";
+
+    statusEl.textContent = "checking traineddata...";
+    await checkFetch(trained); // ここで200が出れば配置OK
+
+    statusEl.textContent = "creating worker...";
+    log("createWorker...");
+
+    // ★重要：worker/core を明示（iOS Safari対策）
+    worker = await Tesseract.createWorker({
+      workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
+      corePath:   "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js",
+      langPath:   langBase,
+      logger: m => {
+        if (m?.status) statusEl.textContent = `${m.status} ${m.progress!=null?Math.round(m.progress*100)+'%':''}`.trim();
+      }
+    });
+
+    statusEl.textContent = "loading language...";
+    await worker.loadLanguage("eng");
+
+    statusEl.textContent = "initializing...";
+    await worker.initialize("eng");
+
+    statusEl.textContent = "OCR running";
+    log("OCR running ✅");
+
+    // 3秒ごとに全体OCR（まず動作確認用）
+    setInterval(async () => {
+      const { data } = await worker.recognize(video);
+      log("---- recognize ----");
+      log((data.text || "").slice(0, 400)); // 先頭だけ表示
+    }, 3000);
+
+  }catch(e){
+    statusEl.textContent = "ERROR (see log)";
+    log("ERROR: " + (e?.message || e));
+    console.error(e);
+  }
 };
 </script>
-
 </body>
 </html>
