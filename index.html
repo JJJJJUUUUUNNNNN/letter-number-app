@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Letter-Number Linker（静止 / カメラ）</title>
 
-<!-- Tesseract.js（WASMを使わない v2） -->
+<!-- Tesseract.js v2 -->
 <script src="https://unpkg.com/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
 
 <style>
@@ -61,6 +61,7 @@ td, th {
   padding:4px;
   font-size:13px;
 }
+.small { font-size:12px; opacity:.9; }
 </style>
 </head>
 
@@ -69,39 +70,40 @@ td, th {
 <h1>Letter-Number Linker（静止 / カメラ）</h1>
 
 <div class="section">
-<button onclick="startCamera()">カメラ開始</button>
-<button onclick="stopCamera()">停止</button>
-<button onclick="flipCamera()">外/内 切替</button>
-<button onclick="captureOCR()">1回OCR</button>
-<span id="status">ready</span>
-<br>
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas" hidden></canvas>
+  <button onclick="startCamera()">カメラ開始</button>
+  <button onclick="stopCamera()">停止</button>
+  <button onclick="flipCamera()">外/内 切替</button>
+  <button onclick="captureOCR()">1回OCR</button>
+  <span id="status">ready</span>
+  <div class="small">※ 数字が小さいと numbers=0 になりやすいので「数字が読める距離まで寄る」と安定します</div>
+  <br>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" hidden></canvas>
 </div>
 
 <div class="section">
-<h3>写真を追加（複数可）</h3>
-<input type="file" accept="image/*" multiple onchange="loadFiles(this.files)">
-<button onclick="runStaticOCR()">OCR実行（1枚ずつ）</button>
+  <h3>写真を追加（複数可）</h3>
+  <input type="file" accept="image/*" multiple onchange="loadFiles(this.files)">
+  <button onclick="runStaticOCR()">OCR実行（1枚ずつ）</button>
 </div>
 
 <div class="section">
-<h3>検索（英字1文字）</h3>
-<input id="searchLetter" placeholder="例: B" maxlength="1">
-<button onclick="search()">検索</button>
-<button onclick="exportCSV()">CSV出力</button>
+  <h3>検索（英字1文字）</h3>
+  <input id="searchLetter" placeholder="例: B" maxlength="1">
+  <button onclick="search()">検索</button>
+  <button onclick="exportCSV()">CSV出力</button>
 </div>
 
 <div class="section">
-<h3>検出一覧（端末内）</h3>
-<table id="resultTable">
-<tr><th>#</th><th>Letter</th><th>Number</th><th>距離</th><th>画像</th></tr>
-</table>
+  <h3>検出一覧（端末内）</h3>
+  <table id="resultTable">
+    <tr><th>#</th><th>Letter</th><th>Number</th><th>距離</th><th>画像</th></tr>
+  </table>
 </div>
 
 <div class="section">
-<h3>デバッグログ</h3>
-<pre id="log"></pre>
+  <h3>デバッグログ</h3>
+  <pre id="log"></pre>
 </div>
 
 <script>
@@ -110,21 +112,85 @@ let facing = "environment";
 let storedImages = [];
 let results = [];
 
-const log = msg => {
-  document.getElementById("log").textContent += msg + "\n";
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+
+const log = (msg) => {
+  const el = document.getElementById("log");
+  el.textContent += msg + "\n";
+  el.scrollTop = el.scrollHeight;
 };
 
-const status = msg => {
+const status = (msg) => {
   document.getElementById("status").textContent = msg;
 };
 
+// ---------- 画像前処理（数字が小さい時に効く） ----------
+function toBinarizedCanvas(srcCanvas, threshold=160) {
+  const c = document.createElement("canvas");
+  c.width = srcCanvas.width;
+  c.height = srcCanvas.height;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(srcCanvas, 0, 0);
+
+  const img = ctx.getImageData(0,0,c.width,c.height);
+  const d = img.data;
+  for (let i=0; i<d.length; i+=4) {
+    const r=d[i], g=d[i+1], b=d[i+2];
+    // グレースケール
+    const y = (0.299*r + 0.587*g + 0.114*b);
+    const v = (y > threshold) ? 255 : 0;
+    d[i]=d[i+1]=d[i+2]=v;
+    d[i+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return c;
+}
+
+function scaleCanvas(srcCanvas, scale=2.0) {
+  const c = document.createElement("canvas");
+  c.width = Math.round(srcCanvas.width * scale);
+  c.height = Math.round(srcCanvas.height * scale);
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(srcCanvas, 0, 0, c.width, c.height);
+  return c;
+}
+
+// ---------- OCR呼び出し（設定を変えて2回回す） ----------
+async function recognizeWithConfig(srcCanvas, whitelist, psm) {
+  // tesseract.js v2 は options.config でパラメータを渡せます
+  const { data } = await Tesseract.recognize(
+    srcCanvas,
+    "eng",
+    {
+      tessdataPath: "./tessdata",
+      logger: (m)=>{},
+      config: {
+        tessedit_char_whitelist: whitelist,
+        tessedit_pageseg_mode: String(psm),
+        user_defined_dpi: "300",
+        preserve_interword_spaces: "1"
+      }
+    }
+  );
+  return data;
+}
+
+// ---------- カメラ ----------
 async function startCamera() {
   stopCamera();
-  stream = await navigator.mediaDevices.getUserMedia({
-    video:{ facingMode:facing }
-  });
-  video.srcObject = stream;
-  status("camera started");
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing }
+    });
+    video.srcObject = stream;
+    status("camera started");
+    log(`camera started (facing=${facing})`);
+  } catch (e) {
+    status("camera error");
+    log("camera error: " + e);
+  }
 }
 
 function stopCamera() {
@@ -132,23 +198,31 @@ function stopCamera() {
     stream.getTracks().forEach(t=>t.stop());
     stream=null;
     status("camera stopped");
+    log("camera stopped");
   }
 }
 
 function flipCamera() {
-  facing = facing==="environment" ? "user" : "environment";
+  facing = (facing==="environment") ? "user" : "environment";
   startCamera();
 }
 
 async function captureOCR() {
   const v = video;
+  if (!v.videoWidth || !v.videoHeight) {
+    log("video not ready");
+    return;
+  }
+  // ここで縮小しすぎると数字が死ぬので、基本 360 に上げる（重ければ 320）
+  const targetW = 360;
   const c = canvas;
-  c.width = 320;
-  c.height = v.videoHeight * (320 / v.videoWidth);
+  c.width = targetW;
+  c.height = Math.round(v.videoHeight * (targetW / v.videoWidth));
   c.getContext("2d").drawImage(v,0,0,c.width,c.height);
   await runOCR(c, "camera");
 }
 
+// ---------- 静止画像 ----------
 function loadFiles(files) {
   storedImages = [];
   for (const f of files) {
@@ -162,51 +236,108 @@ function loadFiles(files) {
 async function runStaticOCR() {
   for (const item of storedImages) {
     const c = document.createElement("canvas");
-    const w = 320;
+    const w = 360; // 数字が小さい場合に効く
     c.width = w;
-    c.height = item.img.height * (w / item.img.width);
+    c.height = Math.round(item.img.height * (w / item.img.width));
     c.getContext("2d").drawImage(item.img,0,0,c.width,c.height);
     await runOCR(c, item.name);
   }
 }
 
-async function runOCR(canvas, source) {
+// =======================================================
+// ★ここがメイン修正：英字OCRと数字OCRを分ける（数字は拡大）
+// =======================================================
+async function runOCR(srcCanvas, source) {
   status("OCR...");
   log(`--- ${source} ---`);
-  const { data } = await Tesseract.recognize(
-    canvas,
-    "eng",
-    {
-      tessdataPath: "./tessdata",
-      logger:m=>{}
-    }
-  );
+  log(`canvas ${srcCanvas.width}x${srcCanvas.height}`);
+
+  // 1) ベースを二値化（盤面が暗く、文字が白ならこれが効く）
+  const baseBin = toBinarizedCanvas(srcCanvas, 150);
+
+  // 2) 数字用はさらに拡大（二値化→拡大が安定）
+  const numCanvas = scaleCanvas(baseBin, 2.0);
+
+  // 3) OCR（英字と数字で設定を変える）
+  //    英字：A-Zのみ / PSM 10(単一文字)〜11(疎なテキスト)の中間として 11 を使う
+  //    数字：0-9のみ / 3桁が多いので PSM 7(1行) を使う
+  let letterData, numberData;
+  try {
+    letterData = await recognizeWithConfig(baseBin, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 11);
+    numberData = await recognizeWithConfig(numCanvas, "0123456789", 7);
+  } catch (e) {
+    status("OCR error");
+    log("OCR error: " + e);
+    return;
+  }
 
   const letters = [];
   const numbers = [];
 
-  data.words.forEach(w=>{
-    const t = w.text.trim();
-    if (/^[A-Z]$/.test(t)) letters.push({...w});
-    if (/^\d{3}$/.test(t) && +t <= 410) numbers.push({...w});
+  // 英字抽出（iPhoneで小文字になる事があるので i で拾って大文字化）
+  (letterData.words || []).forEach(w=>{
+    const t = (w.text || "").trim();
+    if (/^[A-Z]$/i.test(t)) {
+      letters.push({
+        text: t.toUpperCase(),
+        bbox: w.bbox
+      });
+    }
+  });
+
+  // 数字抽出（拡大して読んでるので bbox が numCanvas 基準 → base に戻すため 1/2 する）
+  const scaleBack = 1 / 2.0;
+  (numberData.words || []).forEach(w=>{
+    const raw = (w.text || "").trim();
+
+    // 1〜3桁で拾って 3桁に揃える（039 → 39 みたいに落ちても救う）
+    if (/^\d{1,3}$/.test(raw)) {
+      const n = parseInt(raw, 10);
+      if (!Number.isNaN(n) && n <= 410) {
+        const t3 = String(n).padStart(3, "0"); // 000〜410前提
+        numbers.push({
+          text: t3,
+          bbox: {
+            x0: w.bbox.x0 * scaleBack,
+            y0: w.bbox.y0 * scaleBack,
+            x1: w.bbox.x1 * scaleBack,
+            y1: w.bbox.y1 * scaleBack
+          }
+        });
+      }
+    }
   });
 
   log(`letters=${letters.length}, numbers=${numbers.length}`);
 
+  // 4) ペアリング：距離 + 「数字が上」を少し優先（あなたの盤面は数字が英字の上にある想定）
+  function center(b){
+    return { x:(b.x0+b.x1)/2, y:(b.y0+b.y1)/2 };
+  }
+
   letters.forEach(L=>{
-    let best=null;
+    let best = null;
+    const cL = center(L.bbox);
+
     numbers.forEach(N=>{
-      const dx=L.bbox.x0-N.bbox.x0;
-      const dy=L.bbox.y0-N.bbox.y0;
-      const d=Math.hypot(dx,dy);
-      if(!best||d<best.d) best={d,N};
+      const cN = center(N.bbox);
+      const dx = cL.x - cN.x;
+      const dy = cL.y - cN.y;
+      const dist = Math.hypot(dx,dy);
+
+      // 数字が「上」にある（cN.y < cL.y）ならボーナス（スコアを小さく）
+      const aboveBonus = (cN.y < cL.y) ? 0.85 : 1.15;
+      const score = dist * aboveBonus;
+
+      if (!best || score < best.score) best = { score, dist, N };
     });
-    if(best){
+
+    if (best) {
       results.push({
-        letter:L.text,
-        number:best.N.text,
-        dist:Math.round(best.d),
-        img:source
+        letter: L.text,
+        number: best.N.text,
+        dist: Math.round(best.dist),
+        img: source
       });
     }
   });
@@ -215,6 +346,7 @@ async function runOCR(canvas, source) {
   status("done");
 }
 
+// ---------- 表示/操作 ----------
 function refreshTable(){
   const t=document.getElementById("resultTable");
   t.innerHTML="<tr><th>#</th><th>Letter</th><th>Number</th><th>距離</th><th>画像</th></tr>";
